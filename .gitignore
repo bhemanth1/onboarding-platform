@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+/backend/app/config.py
 
 # Python virtual environments
 .venv/

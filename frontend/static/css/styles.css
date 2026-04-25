@@ -37,7 +37,7 @@ html,body{height:100%;overflow:hidden}
   /* Gradients */
   --grad-hero:linear-gradient(135deg,#EDE9FF 0%,#F5EEFF 30%,#FFE4F7 60%,#FFFFFF 100%);
   --grad-banner:linear-gradient(90deg,#A855F7 0%,#6B8EF0 50%,#01CAB8 100%);
-  --grad-desktop:linear-gradient(135deg,#2b062b 0%,#4b0835 22%,#8a0f66 48%,#d11d91 72%,#39104f 100%);
+  --grad-desktop:linear-gradient(135deg,#2d0a6e 0%,#5929d0 28%,#A855F7 54%,#CF008B 76%,#0E2E89 100%);
   /* Shadows */
   --shadow-sm:0 1px 3px rgba(0,0,0,.08);
   --shadow-md:0 4px 12px rgba(0,0,0,.10);
@@ -63,12 +63,12 @@ body::before{
   content:'';
   position:fixed;inset:0;
   background:
-    linear-gradient(153deg, transparent 0 45%, rgba(249,93,196,.20) 45.2%, rgba(255,255,255,.46) 45.7%, rgba(216,37,166,.55) 46.8%, transparent 60%),
-    linear-gradient(164deg, transparent 0 31%, rgba(255,89,195,.35) 31.2%, rgba(255,167,229,.72) 32%, rgba(126,18,111,.34) 35%, transparent 56%),
-    linear-gradient(131deg, transparent 0 58%, rgba(255,255,255,.70) 58.4%, rgba(236,67,191,.72) 59.2%, rgba(135,14,123,.40) 66%, transparent 82%),
-    linear-gradient(24deg, transparent 0 24%, rgba(71,7,44,.55) 24.2%, rgba(216,35,154,.42) 36%, rgba(255,93,205,.56) 45%, transparent 73%),
-    radial-gradient(ellipse at 78% 68%, rgba(230,31,158,.58) 0%, transparent 42%),
-    radial-gradient(ellipse at 28% 48%, rgba(140,33,202,.42) 0%, transparent 45%),
+    linear-gradient(153deg, transparent 0 45%, rgba(232,229,255,.18) 45.2%, rgba(255,255,255,.38) 45.7%, rgba(207,0,139,.32) 46.8%, transparent 60%),
+    linear-gradient(164deg, transparent 0 31%, rgba(168,85,247,.24) 31.2%, rgba(255,214,244,.50) 32%, rgba(89,41,208,.26) 35%, transparent 56%),
+    linear-gradient(131deg, transparent 0 58%, rgba(255,255,255,.56) 58.4%, rgba(207,0,139,.38) 59.2%, rgba(14,46,137,.28) 66%, transparent 82%),
+    linear-gradient(24deg, transparent 0 24%, rgba(14,46,137,.42) 24.2%, rgba(89,41,208,.28) 36%, rgba(207,0,139,.32) 45%, transparent 73%),
+    radial-gradient(ellipse at 78% 68%, rgba(207,0,139,.32) 0%, transparent 42%),
+    radial-gradient(ellipse at 28% 48%, rgba(168,85,247,.28) 0%, transparent 45%),
     var(--grad-desktop);
   background-size:cover;
   z-index:-1;
@@ -113,11 +113,11 @@ body::after{
   inset:20px 16px 0 16px;
   background:#fff;
   border-radius:var(--r-lg) var(--r-lg) 0 0;
-  box-shadow:0 8px 40px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.08);
+  box-shadow:0 18px 52px rgba(15,23,42,.22), 0 4px 14px rgba(15,23,42,.12), 0 0 0 1px rgba(226,232,240,.72);
   display:flex;
   flex-direction:column;
   overflow:hidden;
-  border:1px solid rgba(255,255,255,.15);
+  border:1px solid rgba(226,232,240,.9);
   border-bottom:none;
   transition:opacity .2s ease, transform .22s cubic-bezier(.34,1.2,.64,1), box-shadow .2s ease;
   will-change:transform;
@@ -146,11 +146,11 @@ body::after{
   min-height:0;
   display:flex;
   flex-direction:column;
-  border-right:1px solid rgba(89,41,208,.14);
+  border-right:1px solid var(--n7);
 }
 /* Window unfocused (when modal/LC open) */
 .app-window.unfocused{
-  box-shadow:0 4px 20px rgba(0,0,0,.2), 0 0 0 1px rgba(0,0,0,.06);
+  box-shadow:0 8px 28px rgba(15,23,42,.16), 0 0 0 1px rgba(226,232,240,.8);
 }
 
 /* Window titlebar — draggable */

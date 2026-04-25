@@ -643,7 +643,7 @@ function Cases({ cases, openCase }) {
 
 function CaseRow({ item, openCase }) {
   return (
-    <div onClick={() => openCase?.(item)} style={{ display: "grid", gridTemplateColumns: "1.8fr 1fr 1fr 1fr 90px 80px 80px", alignItems: "center", padding: "9px 14px", borderBottom: "1px solid var(--n8)", cursor: openCase ? "pointer" : "default" }}>
+    <div onClick={() => openCase?.(item)} style={{ display: "grid", gridTemplateColumns: "1.8fr 1.15fr 1.1fr 1fr 90px 80px 80px", columnGap: 10, alignItems: "center", padding: "9px 14px", borderBottom: "1px solid var(--n8)", cursor: openCase ? "pointer" : "default" }}>
       <div className="emp"><div className="emp-av" style={{ background: item.col }}>{item.ini}</div><div><div className="emp-name">{item.name}</div><div className="emp-role">{item.dept} · {item.caseId}</div></div></div>
       <span className={`tag ${phaseTagClass(item.phase)}`}>{item.phase}</span>
       <div>{badge(item.st)}</div>

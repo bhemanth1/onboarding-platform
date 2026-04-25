@@ -2,11 +2,10 @@
 Database Configuration and Connection
 """
 import sqlite3
-import os
 from typing import Generator
 from ..config import settings
 
-DB_PATH = os.getenv('DB_PATH', 'aegis.db')
+DB_PATH = settings.DB_PATH
 
 def get_db_connection():
     """Get database connection"""
