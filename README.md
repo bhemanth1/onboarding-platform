@@ -16,16 +16,35 @@ The MVP reads from the AegisAI PostgreSQL database when `backend/.env` contains 
 
 ## Run
 
+### Backend
+
 ```powershell
 cd "C:\Users\USER\Downloads\101 apples\mvp\aegis-desktop\backend"
-& "C:\Users\USER\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### React Frontend
+
+```powershell
+cd "C:\Users\USER\Downloads\101 apples\mvp\aegis-desktop\frontend"
+npm.cmd install
+npm.cmd run dev
 ```
 
 Open:
 
-- App: http://127.0.0.1:8000/
+- React dev app: http://127.0.0.1:5173/
+- Built app served by backend: http://127.0.0.1:8000/
 - API docs: http://127.0.0.1:8000/docs
 - Bootstrap data: http://127.0.0.1:8000/api/bootstrap
+- MVP dashboard data: http://127.0.0.1:8000/api/mvp/dashboard
+
+### Seed MVP Dummy Data
+
+```powershell
+cd "C:\Users\USER\Downloads\101 apples\mvp\aegis-desktop\backend"
+.\.venv\Scripts\python.exe scripts\seed_mvp_data.py
+```
 
 ## Data Source
 

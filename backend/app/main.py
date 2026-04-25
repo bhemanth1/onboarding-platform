@@ -15,6 +15,7 @@ from .controllers import (
     hil_router,
     audit_router,
     dashboard_router,
+    mvp_router,
 )
 
 # Initialize database
@@ -42,14 +43,19 @@ app.include_router(onboarding_router)
 app.include_router(hil_router)
 app.include_router(audit_router)
 app.include_router(dashboard_router)
+app.include_router(mvp_router)
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 STATIC_DIR = os.path.join(FRONTEND_DIR, "static")
 VIEWS_DIR = os.path.join(FRONTEND_DIR, "views")
+DIST_DIR = os.path.join(FRONTEND_DIR, "dist")
+DIST_ASSETS_DIR = os.path.join(DIST_DIR, "assets")
 
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if os.path.isdir(DIST_ASSETS_DIR):
+    app.mount("/assets", StaticFiles(directory=DIST_ASSETS_DIR), name="assets")
 
 # Health check
 @app.get("/health")
@@ -64,6 +70,9 @@ def health_check():
 @app.get("/")
 def root():
     """Serve the desktop frontend view."""
+    dist_index = os.path.join(DIST_DIR, "index.html")
+    if os.path.exists(dist_index):
+        return FileResponse(dist_index)
     index_path = os.path.join(VIEWS_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
