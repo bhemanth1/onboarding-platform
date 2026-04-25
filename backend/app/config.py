@@ -19,12 +19,12 @@ class Settings:
     DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
     
     # Database
-    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./aegis.db')
+    DB_CON_STR = os.getenv('DB_CON_STR', 'sqlite:///./aegis.db')
     DB_PATH = os.getenv('DB_PATH', 'aegis.db')
-    USE_POSTGRES = DATABASE_URL.startswith('postgresql')
+    USE_POSTGRES = DB_CON_STR.startswith('postgresql')
     
     # CORS
-    CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5000').split(',')
+    CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5000,http://localhost:5173,http://127.0.0.1:5173').split(',')
     CORS_ALLOW_CREDENTIALS = True
     CORS_ALLOW_METHODS = ['*']
     CORS_ALLOW_HEADERS = ['*']

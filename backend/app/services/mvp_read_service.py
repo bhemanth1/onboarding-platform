@@ -18,6 +18,8 @@ class MvpReadService:
         cases = await self.cases()
         audit = await self.audit(limit=30)
         analytics = self.analytics_from_cases(cases)
+        if postgres_enabled():
+            analytics["metrics"] = await self.raw_metrics(cases)
         return {
             "source": "postgresql" if postgres_enabled() else "sqlite",
             "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
@@ -27,6 +29,44 @@ class MvpReadService:
             "analytics": analytics,
             "hil_gates": await self.hil_gates(),
             "workflow": self.workflow_summary(),
+        }
+
+    async def raw_metrics(self, cases: list[dict] | None = None) -> dict:
+        if not postgres_enabled():
+            return self.analytics_from_cases(cases or [])["metrics"]
+        row = await fetch_row(
+            """
+            SELECT
+              COUNT(*) FILTER (WHERE status NOT IN ('completed', 'withdrawn'))::int AS active,
+              COUNT(*) FILTER (WHERE status IN ('in_progress', 'active'))::int AS in_progress,
+              COUNT(*) FILTER (WHERE status = 'pending_hil')::int AS pending_hil,
+              COUNT(*) FILTER (WHERE COALESCE(is_completed, FALSE) = TRUE OR status = 'completed')::int AS completed,
+              COUNT(*) FILTER (WHERE status = 'at_risk')::int AS at_risk,
+              COUNT(*) FILTER (WHERE status = 'blocked')::int AS blocked,
+              COUNT(*) FILTER (WHERE COALESCE(sla_breach, FALSE) = TRUE)::int AS sla_breaches,
+              COALESCE(ROUND(AVG(overall_progress)), 0)::int AS avg_progress
+            FROM onboarding_cases
+            """
+        )
+        exceptions = await fetch_row(
+            """
+            SELECT COUNT(*)::int AS open_exceptions
+            FROM hil_gates
+            WHERE decision = 'pending' AND COALESCE(is_blocking, FALSE) = TRUE
+            """
+        )
+        risks = [case["riskScore"] for case in cases or [] if "riskScore" in case]
+        return {
+            "active": row["active"],
+            "inProgress": row["in_progress"],
+            "pendingHil": row["pending_hil"],
+            "completed": row["completed"],
+            "atRisk": row["at_risk"],
+            "blocked": row["blocked"],
+            "slaBreaches": row["sla_breaches"],
+            "openExceptions": (exceptions or {}).get("open_exceptions", 0),
+            "avgProgress": row["avg_progress"],
+            "avgRisk": round(sum(risks) / len(risks)) if risks else 0,
         }
 
     async def cases(self) -> list[dict]:

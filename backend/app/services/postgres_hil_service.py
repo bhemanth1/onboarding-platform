@@ -32,6 +32,39 @@ async def trigger_background_verification(case_ref: str | None = None) -> dict:
         f"Please approve or reject before provisioning continues."
     )
 
+    existing = await fetch_row(
+        """
+        SELECT id, approval_token, decision, email_sent_to, email_sent_at
+        FROM hil_gates
+        WHERE case_id = $1 AND gate_type = $2 AND decision = 'pending'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        case["case_uuid"],
+        BACKGROUND_GATE_TYPE,
+    )
+    if existing:
+        await execute(
+            """
+            UPDATE onboarding_cases
+            SET status = 'pending_hil', updated_at = NOW()
+            WHERE id = $1
+            """,
+            case["case_uuid"],
+        )
+        return {
+            "status": "pending",
+            "message": "Existing pending HR verification HIL gate reused.",
+            "case_number": case["case_number"],
+            "employee_id": case["employee_id"],
+            "candidate_name": candidate_name,
+            "gate_id": str(existing["id"]),
+            "email_sent_to": existing["email_sent_to"],
+            "email_result": {"sent": False, "reason": "Pending gate already exists; no duplicate email sent"},
+            "approve_url": f"{settings.BACKEND_URL}/api/hil/webhook/approve?token={existing['approval_token']}",
+            "reject_url": f"{settings.BACKEND_URL}/api/hil/webhook/reject?token={existing['approval_token']}",
+        }
+
     gate = await fetch_row(
         """
         INSERT INTO hil_gates (
@@ -137,6 +170,18 @@ async def decide_by_token(token: str, decision: str) -> str:
         raise HTTPException(status_code=400, detail="Approval token has expired")
 
     next_status = "in_progress" if decision == "approved" else "blocked"
+    remaining = await fetch_row(
+        """
+        SELECT COUNT(*)::int AS total
+        FROM hil_gates
+        WHERE case_id = $1 AND id <> $2 AND decision = 'pending' AND COALESCE(is_blocking, FALSE) = TRUE
+        """,
+        gate["case_id"],
+        gate["id"],
+    )
+    if decision == "approved" and remaining and remaining["total"]:
+        next_status = "pending_hil"
+
     await execute(
         """
         UPDATE hil_gates

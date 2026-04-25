@@ -7,6 +7,7 @@ from .hil_controller import router as hil_router
 from .audit_controller import router as audit_router
 from .dashboard_controller import router as dashboard_router
 from .mvp_controller import router as mvp_router
+from .v1_controller import router as v1_router
 
 __all__ = [
     'employee_router',
@@ -15,4 +16,5 @@ __all__ = [
     'audit_router',
     'dashboard_router',
     'mvp_router',
+    'v1_router',
 ]

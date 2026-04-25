@@ -37,7 +37,7 @@ html,body{height:100%;overflow:hidden}
   /* Gradients */
   --grad-hero:linear-gradient(135deg,#EDE9FF 0%,#F5EEFF 30%,#FFE4F7 60%,#FFFFFF 100%);
   --grad-banner:linear-gradient(90deg,#A855F7 0%,#6B8EF0 50%,#01CAB8 100%);
-  --grad-desktop:linear-gradient(135deg,#2d0a6e 0%,#4a0e8a 20%,#6b1fa8 40%,#7b1450 65%,#5c0a3a 85%,#3a0828 100%);
+  --grad-desktop:linear-gradient(135deg,#2b062b 0%,#4b0835 22%,#8a0f66 48%,#d11d91 72%,#39104f 100%);
   /* Shadows */
   --shadow-sm:0 1px 3px rgba(0,0,0,.08);
   --shadow-md:0 4px 12px rgba(0,0,0,.10);
@@ -63,12 +63,14 @@ body::before{
   content:'';
   position:fixed;inset:0;
   background:
-    radial-gradient(ellipse at 15% 20%, rgba(168,85,247,.45) 0%, transparent 42%),
-    radial-gradient(ellipse at 82% 75%, rgba(207,0,139,.38) 0%, transparent 42%),
-    radial-gradient(ellipse at 50% 50%, rgba(109,40,217,.25) 0%, transparent 52%),
-    radial-gradient(ellipse at 8%  88%, rgba(159,18,57,.32)  0%, transparent 38%),
-    radial-gradient(ellipse at 90% 10%, rgba(124,58,237,.28) 0%, transparent 40%),
+    linear-gradient(153deg, transparent 0 45%, rgba(249,93,196,.20) 45.2%, rgba(255,255,255,.46) 45.7%, rgba(216,37,166,.55) 46.8%, transparent 60%),
+    linear-gradient(164deg, transparent 0 31%, rgba(255,89,195,.35) 31.2%, rgba(255,167,229,.72) 32%, rgba(126,18,111,.34) 35%, transparent 56%),
+    linear-gradient(131deg, transparent 0 58%, rgba(255,255,255,.70) 58.4%, rgba(236,67,191,.72) 59.2%, rgba(135,14,123,.40) 66%, transparent 82%),
+    linear-gradient(24deg, transparent 0 24%, rgba(71,7,44,.55) 24.2%, rgba(216,35,154,.42) 36%, rgba(255,93,205,.56) 45%, transparent 73%),
+    radial-gradient(ellipse at 78% 68%, rgba(230,31,158,.58) 0%, transparent 42%),
+    radial-gradient(ellipse at 28% 48%, rgba(140,33,202,.42) 0%, transparent 45%),
     var(--grad-desktop);
+  background-size:cover;
   z-index:-1;
 }
 /* Noise texture overlay — makes wallpaper feel like OS not CSS */

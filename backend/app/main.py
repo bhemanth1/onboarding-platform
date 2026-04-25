@@ -9,6 +9,8 @@ import os
 
 from .config import settings
 from .database import init_db
+from .database.postgres import close_pool, init_pool, postgres_enabled
+from .services.scheduler_service import start_scheduler, stop_scheduler
 from .controllers import (
     employee_router,
     onboarding_router,
@@ -16,6 +18,7 @@ from .controllers import (
     audit_router,
     dashboard_router,
     mvp_router,
+    v1_router,
 )
 
 # Initialize database
@@ -44,6 +47,20 @@ app.include_router(hil_router)
 app.include_router(audit_router)
 app.include_router(dashboard_router)
 app.include_router(mvp_router)
+app.include_router(v1_router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    if postgres_enabled():
+        await init_pool()
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    stop_scheduler()
+    await close_pool()
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
@@ -62,8 +79,8 @@ if os.path.isdir(DIST_ASSETS_DIR):
 def health_check():
     """Health check endpoint"""
     return {
-        "status": "healthy",
-        "service": settings.API_TITLE,
+        "status": "ok",
+        "agent": settings.AGENT_ID,
         "version": settings.API_VERSION
     }
 

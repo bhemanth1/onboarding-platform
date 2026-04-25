@@ -1,12 +1,14 @@
 """
 Employee Model
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import datetime
 
 class Employee(BaseModel):
     """Employee data model"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     first_name: str
     last_name: str
@@ -23,9 +25,6 @@ class Employee(BaseModel):
     documents_status: Optional[str] = None
     created_at: datetime = None
     updated_at: datetime = None
-
-    class Config:
-        from_attributes = True
 
     @property
     def full_name(self) -> str:

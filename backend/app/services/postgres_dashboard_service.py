@@ -46,6 +46,7 @@ class PostgresDashboardService:
               oc.employee_id,
               oc.phase,
               oc.status,
+              oc.is_completed,
               oc.overall_progress,
               oc.pre_onboarding_progress,
               oc.onboarding_progress,
@@ -58,9 +59,30 @@ class PostgresDashboardService:
               c.last_name,
               c.role,
               c.department,
-              c.joining_date
+              c.joining_date,
+              COALESCE(pre.total, 0) AS pre_total,
+              COALESCE(pre.completed, 0) AS pre_completed,
+              COALESCE(doc.total, 0) AS doc_total,
+              COALESCE(doc.completed, 0) AS doc_completed,
+              COALESCE(prov.total, 0) AS prov_total,
+              COALESCE(prov.completed, 0) AS prov_completed
             FROM onboarding_cases oc
             JOIN candidates c ON c.id = oc.candidate_id
+            LEFT JOIN LATERAL (
+              SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'completed')::int AS completed
+              FROM pre_onboarding_tasks
+              WHERE case_id = oc.id
+            ) pre ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status IN ('validated', 'approved', 'verified'))::int AS completed
+              FROM documents
+              WHERE case_id = oc.id
+            ) doc ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'completed')::int AS completed
+              FROM provisioning_items
+              WHERE case_id = oc.id
+            ) prov ON TRUE
             LEFT JOIN LATERAL (
               SELECT decision
               FROM hil_gates
@@ -77,16 +99,21 @@ class PostgresDashboardService:
             first = row["first_name"] or ""
             last = row["last_name"] or ""
             employee_id = row["employee_id"] or row["case_number"]
-            progress = row["overall_progress"] or row["onboarding_progress"] or row["pre_onboarding_progress"] or 0
-            status = "at-risk" if row["sla_breach"] else self.STATUS_LABELS.get(row["status"], row["status"])
+            pre_progress = self._percent(row["pre_completed"], row["pre_total"], row["pre_onboarding_progress"])
+            doc_progress = self._percent(row["doc_completed"], row["doc_total"], None)
+            prov_progress = self._percent(row["prov_completed"], row["prov_total"], None)
+            onboarding_parts = [value for value in [doc_progress, prov_progress] if value is not None]
+            onboarding_progress = round(sum(onboarding_parts) / len(onboarding_parts)) if onboarding_parts else (row["onboarding_progress"] or 0)
+            progress = round((pre_progress + onboarding_progress + (row["post_onboarding_progress"] or 0)) / 3)
+            status = "completed" if row["is_completed"] else ("at-risk" if row["sla_breach"] else self.STATUS_LABELS.get(row["status"], row["status"]))
             bg_decision = row["bg_verification_decision"]
-            if bg_decision == "pending":
+            if status != "completed" and bg_decision == "pending":
                 status = "hil"
-            elif bg_decision == "rejected":
+            elif status != "completed" and bg_decision == "rejected":
                 status = "blocked"
             docs_status = self._label(row["docs_status"])
             if bg_decision:
-                docs_status = f"BG {self._label(bg_decision)}"
+                docs_status = f"HR {self._label(bg_decision)}"
             cases.append(
                 {
                     "id": employee_id,
@@ -100,6 +127,8 @@ class PostgresDashboardService:
                     "phase": self.PHASE_LABELS.get(row["phase"], row["phase"]),
                     "phaseKey": row["phase"],
                     "st": status,
+                    "rawStatus": row["status"],
+                    "isCompleted": bool(row["is_completed"]),
                     "join": self._format_date(row["joining_date"]),
                     "prog": progress,
                     "it": self._label(row["it_status"]),
@@ -176,6 +205,12 @@ class PostgresDashboardService:
         if isinstance(value, datetime):
             return value.strftime("%H:%M")
         return str(value)[11:16] if value else "--:--"
+
+    @staticmethod
+    def _percent(completed: int, total: int, fallback: int | None) -> int | None:
+        if total:
+            return round(100 * completed / total)
+        return fallback
 
     @staticmethod
     def _dot(event_type: str, outcome: str | None) -> str:

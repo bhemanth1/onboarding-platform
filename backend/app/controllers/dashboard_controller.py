@@ -7,6 +7,7 @@ from ..database import get_db
 from ..database.postgres import postgres_enabled
 from ..services.dashboard_service import DashboardService
 from ..services.postgres_dashboard_service import PostgresDashboardService
+from ..services.mvp_read_service import MvpReadService
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
@@ -23,6 +24,7 @@ async def bootstrap(db=Depends(get_db)):
 async def metrics(db=Depends(get_db)):
     """Return high-level onboarding metrics."""
     if postgres_enabled():
-        data = await PostgresDashboardService().bootstrap()
-        return data["metrics"]
+        service = MvpReadService()
+        cases = await service.cases()
+        return await service.raw_metrics(cases)
     return DashboardService(db).metrics()

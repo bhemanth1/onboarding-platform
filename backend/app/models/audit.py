@@ -1,7 +1,7 @@
 """
 Audit Log Model
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -19,6 +19,8 @@ class AuditAction(str, Enum):
 
 class AuditLog(BaseModel):
     """Audit log entry"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     case_id: str
     employee_name: str
@@ -36,5 +38,3 @@ class AuditLog(BaseModel):
     rule_triggered: Optional[str] = None
     details: Optional[Dict[str, Any]] = None
     
-    class Config:
-        from_attributes = True

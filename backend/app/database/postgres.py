@@ -8,15 +8,17 @@ import asyncpg
 
 from ..config import settings
 
+_pool: asyncpg.Pool | None = None
+
 
 def postgres_enabled() -> bool:
     """Return whether the current .env points to a PostgreSQL database."""
-    return settings.DATABASE_URL.startswith("postgresql")
+    return settings.DB_CON_STR.startswith("postgresql")
 
 
 def _asyncpg_dsn() -> tuple[str, bool]:
     """Convert SQLAlchemy's asyncpg URL into an asyncpg-compatible DSN."""
-    parsed = urlparse(settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://", 1))
+    parsed = urlparse(settings.DB_CON_STR.replace("postgresql+asyncpg://", "postgresql://", 1))
     query = parse_qs(parsed.query)
     ssl_required = query.get("ssl", [""])[0] == "require" or query.get("sslmode", [""])[0] == "require"
     cleaned = parsed._replace(query="")
@@ -38,17 +40,51 @@ async def execute(query: str, *args):
     return await _run("execute", query, *args)
 
 
-async def _run(method: str, query: str, *args):
-    """Open a short-lived asyncpg connection for a single operation."""
+async def init_pool() -> None:
+    """Create the shared asyncpg pool used by all PostgreSQL endpoints."""
+    global _pool
+    if not postgres_enabled() or _pool is not None:
+        return
     dsn, ssl_required = _asyncpg_dsn()
-    ssl_context = False
-    if ssl_required:
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
+    _pool = await asyncpg.create_pool(
+        dsn=dsn,
+        ssl=_ssl_context(ssl_required),
+        min_size=1,
+        max_size=5,
+        command_timeout=30,
+    )
 
-    conn = await asyncpg.connect(dsn=dsn, ssl=ssl_context)
+
+async def close_pool() -> None:
+    """Close the shared asyncpg pool during application shutdown."""
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
+
+
+async def _run(method: str, query: str, *args):
+    """Run one operation through the shared pool, falling back to lazy init."""
+    if not postgres_enabled():
+        raise RuntimeError("PostgreSQL DB_CON_STR is not configured")
+    if _pool is None:
+        await init_pool()
+    if _pool is not None:
+        async with _pool.acquire() as conn:
+            return await getattr(conn, method)(query, *args)
+
+    dsn, ssl_required = _asyncpg_dsn()
+    conn = await asyncpg.connect(dsn=dsn, ssl=_ssl_context(ssl_required))
     try:
         return await getattr(conn, method)(query, *args)
     finally:
         await conn.close()
+
+
+def _ssl_context(ssl_required: bool):
+    if not ssl_required:
+        return False
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    return ssl_context

@@ -10,8 +10,11 @@ from ..services.postgres_dashboard_service import PostgresDashboardService
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 
 @router.get("/logs/{case_id}", response_model=List[dict])
-def get_audit_logs(case_id: str, limit: int = 50, db=Depends(get_db)):
+async def get_audit_logs(case_id: str, limit: int = 50, db=Depends(get_db)):
     """Get audit logs for case"""
+    if postgres_enabled():
+        from ..services.mvp_read_service import MvpReadService
+        return await MvpReadService().audit(limit=limit, case_ref=case_id)
     cursor = db.cursor()
     cursor.execute("SELECT * FROM audit_logs WHERE case_id = ? ORDER BY timestamp DESC LIMIT ?", (case_id, limit))
     return [dict(row) for row in cursor.fetchall()]

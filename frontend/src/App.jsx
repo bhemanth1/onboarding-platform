@@ -33,8 +33,8 @@ const ROLE_CONFIG = {
   },
   "Onboarding Employee": {
     color: "#0E2E89",
-    initials: "SM",
-    name: "Sarah Mitchell",
+    initials: "AY",
+    name: "Amina Yusuf",
     nav: [
       { label: "My Portal", icon: "M", page: "emp-portal" },
       { label: "Documents", icon: "D", page: "emp-docs" }

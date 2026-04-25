@@ -1,7 +1,7 @@
 """
 HIL (Hand-off In Lieu) Gate Models
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 from enum import Enum
@@ -16,6 +16,8 @@ class HILStatus(str, Enum):
 
 class HILGate(BaseModel):
     """Human-In-Loop decision gate"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     case_id: str
     gate_number: int  # 1, 2, 3, 4
@@ -30,7 +32,7 @@ class HILGate(BaseModel):
     decision_notes: Optional[str] = None
     
     # Validation checks
-    checks_required: dict = {}  # e.g., {'document_valid': True, 'background_clear': True}
+    checks_required: dict = Field(default_factory=dict)  # e.g., {'document_valid': True}
     checks_passed: int = 0
     checks_total: int = 0
     
@@ -38,9 +40,6 @@ class HILGate(BaseModel):
     created_at: datetime = None
     updated_at: datetime = None
     
-    class Config:
-        from_attributes = True
-
     @property
     def check_percentage(self) -> int:
         """Calculate check completion percentage"""

@@ -1,7 +1,7 @@
 # aegis-desktop
 
 FastAPI + static frontend implementation of the AEGIS employee onboarding desktop UI.
-The MVP reads from the AegisAI PostgreSQL database when `backend/.env` contains a `DATABASE_URL` that starts with `postgresql`.
+The MVP reads from the AegisAI PostgreSQL database when `backend/.env` contains a `DB_CON_STR` that starts with `postgresql`.
 
 ## MVC Layout
 
@@ -54,4 +54,4 @@ The current `.env` was merged from the provided AegisAI backend and points to Po
 - `onboarding_cases`
 - `audit_logs`
 
-If `DATABASE_URL` is changed back to `sqlite:///./aegis.db`, the app falls back to the local seeded SQLite demo.
+If `DB_CON_STR` is changed back to `sqlite:///./aegis.db`, the app falls back to the local seeded SQLite demo.

@@ -6,3 +6,4 @@ python-dotenv==1.0.0
 sqlalchemy==2.0.23
 httpx==0.25.2
 asyncpg>=0.29.0
+apscheduler>=3.10.4

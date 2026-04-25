@@ -41,7 +41,7 @@ async def trigger_hil_gate(payload: HILTriggerRequest):
 async def send_background_verification(case_ref: Optional[str] = None):
     """Test endpoint: send HR background verification approval email."""
     if not postgres_enabled():
-        raise HTTPException(status_code=400, detail="PostgreSQL DATABASE_URL is required for this HIL test flow")
+        raise HTTPException(status_code=400, detail="PostgreSQL DB_CON_STR is required for this HIL test flow")
     return await trigger_background_verification(case_ref)
 
 @router.get("/background-verification/status")

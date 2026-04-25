@@ -29,7 +29,10 @@ async def case_detail(case_ref: str):
 @router.get("/analytics")
 async def analytics():
     service = MvpReadService()
-    return service.analytics_from_cases(await service.cases())
+    cases = await service.cases()
+    data = service.analytics_from_cases(cases)
+    data["metrics"] = await service.raw_metrics(cases)
+    return data
 
 
 @router.get("/audit")

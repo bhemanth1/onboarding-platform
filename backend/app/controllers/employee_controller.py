@@ -6,12 +6,28 @@ from typing import List, Optional
 from ..models.employee import Employee
 from ..services.employee_service import EmployeeService
 from ..database import get_db
+from ..database.postgres import postgres_enabled
+from ..services.v1_service import V1Service
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
-@router.post("/", response_model=Employee)
-def create_employee(employee: Employee, db = Depends(get_db)):
+@router.post("/")
+async def create_employee(employee: Employee, db = Depends(get_db)):
     """Create new employee"""
+    if postgres_enabled():
+        return await V1Service().create_candidate({
+            "first_name": employee.first_name,
+            "last_name": employee.last_name,
+            "email": employee.email,
+            "phone": employee.phone or "",
+            "role": employee.role,
+            "department": employee.department,
+            "manager_name": employee.reporting_manager,
+            "joining_date": employee.joining_date.date(),
+            "employee_type": employee.employment_type,
+            "office_location": employee.office_location,
+            "employee_id": employee.id,
+        })
     service = EmployeeService(db)
     return service.create_employee(employee)
 

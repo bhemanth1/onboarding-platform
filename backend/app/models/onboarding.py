@@ -1,16 +1,16 @@
 """
 Onboarding Case and Phase Models
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
 class OnboardingPhase(str, Enum):
     """Onboarding workflow phases"""
-    PRE_ONBOARDING = "pre"
-    ONBOARDING = "onb"
-    POST_ONBOARDING = "post"
+    PRE_ONBOARDING = "pre_onboarding"
+    ONBOARDING = "onboarding"
+    POST_ONBOARDING = "post_onboarding"
     COMPLETED = "completed"
 
 class OnboardingStatus(str, Enum):
@@ -23,6 +23,8 @@ class OnboardingStatus(str, Enum):
 
 class OnboardingCase(BaseModel):
     """Onboarding case model"""
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     employee_id: str
     employee_name: str
@@ -53,9 +55,6 @@ class OnboardingCase(BaseModel):
     created_at: datetime = None
     updated_at: datetime = None
     
-    class Config:
-        from_attributes = True
-
     @property
     def days_remaining(self) -> int:
         """Calculate days until target completion"""
