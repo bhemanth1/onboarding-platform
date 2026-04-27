@@ -63,6 +63,59 @@ VALUES (
     'Initial follow-up'
 );
 
+-- Document
+INSERT INTO documents (
+    case_id, candidate_id, document_type, file_name, status,
+    owner, source, uploaded_by, timing, sla_status,
+    submitted_at, validated_at, rejection_reason, correction_instructions
+)
+VALUES (
+    (SELECT id FROM onboarding_cases WHERE case_number = 'OB-MVP-1001'),
+    (SELECT id FROM candidates WHERE personal_email = 'nisha.rao@mvp.aegis.local'),
+    'identity_proof',
+    'identity_proof.pdf',
+    'submitted',
+    'Candidate',
+    'employee_portal',
+    'Nisha Rao',
+    'On Time',
+    'on_time',
+    NOW() - INTERVAL '1 day',
+    NULL,
+    NULL,
+    NULL
+);
+
+-- Provisioning item
+INSERT INTO provisioning_items (
+    case_id, item_type, assigned_team, description,
+    status, requested_at, completed_at, notes
+)
+VALUES (
+    (SELECT id FROM onboarding_cases WHERE case_number = 'OB-MVP-1001'),
+    'laptop',
+    'it',
+    'Laptop allocation and base software setup',
+    'in_progress',
+    NOW() - INTERVAL '1 day',
+    NULL,
+    'Provisioning request created from onboarding workflow'
+);
+
+-- Post-onboarding item
+INSERT INTO post_onboarding_items (
+    case_id, payroll_completed, pf_completed,
+    buddy_assigned, feedback_collected, docs_archived
+)
+VALUES (
+    (SELECT id FROM onboarding_cases WHERE case_number = 'OB-MVP-1001'),
+    FALSE,
+    FALSE,
+    FALSE,
+    FALSE,
+    FALSE
+);
+
 -- Audit log
 INSERT INTO audit_logs (
     case_id, candidate_id, employee_id, phase,
@@ -98,3 +151,4 @@ SET display_name = EXCLUDED.display_name,
     color = EXCLUDED.color,
     sort_order = EXCLUDED.sort_order,
     updated_at = NOW();
+    

@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS hil_gates (
     gate_type VARCHAR(100),
     decision VARCHAR(50),
     decided_at TIMESTAMP,
+    decision_notes TEXT,
     is_blocking BOOLEAN,
     flag_description TEXT,
     approval_token VARCHAR(255),
@@ -87,6 +88,98 @@ CREATE TABLE IF NOT EXISTS hil_gates (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
+
+ALTER TABLE IF EXISTS hil_gates
+    ADD COLUMN IF NOT EXISTS decision_notes TEXT;
+
+-- Documents
+CREATE TABLE IF NOT EXISTS documents (
+    id SERIAL PRIMARY KEY,
+    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    candidate_id INT REFERENCES candidates(id) ON DELETE SET NULL,
+    document_type VARCHAR(100),
+    file_name VARCHAR(255),
+    status VARCHAR(50),
+    owner VARCHAR(100),
+    source VARCHAR(100),
+    uploaded_by VARCHAR(100),
+    timing VARCHAR(50),
+    sla_status VARCHAR(50),
+    submitted_at TIMESTAMP,
+    validated_at TIMESTAMP,
+    rejection_reason TEXT,
+    correction_instructions TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS documents
+    ADD COLUMN IF NOT EXISTS case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS candidate_id INT REFERENCES candidates(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS document_type VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS file_name VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS status VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS owner VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS source VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS timing VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS sla_status VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS validated_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
+    ADD COLUMN IF NOT EXISTS correction_instructions TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Provisioning Items
+CREATE TABLE IF NOT EXISTS provisioning_items (
+    id SERIAL PRIMARY KEY,
+    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    item_type VARCHAR(100),
+    assigned_team VARCHAR(50),
+    description TEXT,
+    status VARCHAR(50),
+    requested_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS provisioning_items
+    ADD COLUMN IF NOT EXISTS case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS item_type VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS assigned_team VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS description TEXT,
+    ADD COLUMN IF NOT EXISTS status VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS requested_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS notes TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Post-onboarding Items
+CREATE TABLE IF NOT EXISTS post_onboarding_items (
+    id SERIAL PRIMARY KEY,
+    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    payroll_completed BOOLEAN DEFAULT FALSE,
+    pf_completed BOOLEAN DEFAULT FALSE,
+    buddy_assigned BOOLEAN DEFAULT FALSE,
+    feedback_collected BOOLEAN DEFAULT FALSE,
+    docs_archived BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS post_onboarding_items
+    ADD COLUMN IF NOT EXISTS case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS payroll_completed BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS pf_completed BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS buddy_assigned BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS feedback_collected BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS docs_archived BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
 
 -- Audit Logs (append-only)
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -115,3 +208,12 @@ CREATE TABLE IF NOT EXISTS role_profiles (
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_onboarding_cases_candidate_id ON onboarding_cases(candidate_id);
+CREATE INDEX IF NOT EXISTS idx_documents_case_id ON documents(case_id);
+CREATE INDEX IF NOT EXISTS idx_provisioning_items_case_id ON provisioning_items(case_id);
+CREATE INDEX IF NOT EXISTS idx_post_onboarding_items_case_id ON post_onboarding_items(case_id);
+CREATE INDEX IF NOT EXISTS idx_pre_onboarding_tasks_case_id ON pre_onboarding_tasks(case_id);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_case_id ON follow_ups(case_id);
+CREATE INDEX IF NOT EXISTS idx_hil_gates_case_id ON hil_gates(case_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_case_id ON audit_logs(case_id);
