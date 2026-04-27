@@ -1,4 +1,4 @@
-# Build:  podman build -t aegis-fe --build-arg VITE_API_URL=http://localhost:5000 .
+# Build:  podman build -t aegis-fe --build-arg VITE_API_URL=http://localhost:5001/dana-aegis .
 # Run:    podman run -d --name aegis-fe -p 5000:5000 aegis-fe
 #         (-p host:container is required; without it, localhost:5000 will not work.)
 #
@@ -13,7 +13,7 @@ RUN npm ci
 COPY . .
 
 # Vite inlines VITE_* at build time only
-ARG VITE_API_URL=http://localhost:5001
+ARG VITE_API_URL=http://localhost:5001/dana-aegis
 ENV VITE_API_URL=$VITE_API_URL
 
 # Path where the SPA is mounted (ingress prefix). Must match trailing slash form, e.g. /dana-aegis-fe/

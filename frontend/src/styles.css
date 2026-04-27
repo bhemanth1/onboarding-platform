@@ -883,6 +883,31 @@ body {
   color: var(--warning);
 }
 
+.doc-validation.rejected {
+  background: var(--error-light);
+  color: var(--error);
+}
+
+.reminder-list {
+  display: grid;
+}
+
+.reminder-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--n8);
+  font-size: 11.5px;
+}
+
+.reminder-row strong {
+  color: var(--n0);
+}
+
+.reminder-row span {
+  color: var(--n5);
+}
+
 @media (max-width: 1200px) {
   .employee-grid,
   .employee-readonly-grid {

@@ -1,4 +1,9 @@
-const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || "/dana-aegis";
+function normalizeApiBase(value) {
+  const base = (value || "/dana-aegis").replace(/\/+$/, "");
+  return base.endsWith("/dana-aegis") ? base : `${base}/dana-aegis`;
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE);
 const COLORS = ["#0E2E89", "#16A34A", "#E4902E", "#22D3EE", "#7C3AED", "#E11D48", "#CF008B", "#0E766E", "#6366F1", "#F97316"];
 
 async function get(path) {
@@ -89,6 +94,7 @@ function normalizeCase(item, index = 0) {
     col: item.col || COLORS[index % COLORS.length],
     role: item.role || item.title || "New Joiner",
     dept: item.dept || item.department || "Onboarding",
+    owner: item.owner || item.assignedTo || item.assigned_to || "HR Coordinator",
     phase,
     phaseKey: item.phaseKey || item.phase,
     st: status,
@@ -97,6 +103,10 @@ function normalizeCase(item, index = 0) {
     prog: Math.max(0, Math.min(100, progress)),
     it: item.it || label(item.it_status),
     docs: hilDecision ? `HR ${label(hilDecision)}` : label(docsStatus, "Not Submitted"),
+    documentRows: item.documents || item.documentRows || item.document_rows || [],
+    followUps: item.followUps || item.follow_ups || [],
+    rejectionReason: item.rejectionReason || item.rejection_reason,
+    correctionInstructions: item.correctionInstructions || item.correction_instructions,
     backgroundVerification: hilDecision,
     scenario: item.scenario || scenarioFor(status, phase),
     slaLabel: item.slaLabel || (status === "at-risk" || status === "blocked" ? "SLA Watch" : "On Track"),
@@ -133,12 +143,13 @@ function normaliseMetrics(kpis = {}, cases = []) {
 }
 
 async function dashboard() {
-  const [kpis, rawCases, audit, hil, profiles] = await Promise.all([
+  const [kpis, rawCases, audit, hil, profiles, followUps] = await Promise.all([
     get("/api/v1/dashboard/kpis"),
     get("/api/v1/cases"),
     get("/api/v1/audit/live?limit=100"),
     get("/api/v1/hil"),
-    get("/api/v1/profiles")
+    get("/api/v1/profiles"),
+    get("/api/v1/pre-onboarding/follow-ups")
   ]);
   const cases = normalizeCases(rawCases);
   const analytics = analyticsFromCases(cases);
@@ -151,6 +162,7 @@ async function dashboard() {
     audit,
     analytics,
     profiles,
+    followUps,
     hil_gates: hil,
     workflow: { newJoiner: [], hrCoordinator: [] }
   };
@@ -161,6 +173,7 @@ export const api = {
   cases: async () => normalizeCases(await get("/api/v1/cases")),
   profiles: () => get("/api/v1/profiles"),
   caseDetail: async (caseRef) => normalizeCase(await get(`/api/v1/cases/${encodeURIComponent(caseRef)}`)),
+  followUps: () => get("/api/v1/pre-onboarding/follow-ups"),
   analytics: async () => analyticsFromCases(normalizeCases(await get("/api/v1/cases"))),
   audit: () => get("/api/v1/audit/live?limit=100"),
   hil: () => get("/api/v1/hil"),

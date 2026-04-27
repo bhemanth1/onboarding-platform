@@ -75,10 +75,21 @@ class V1Service:
               c.last_name,
               c.role,
               c.department,
+              c.office_location,
               c.joining_date,
+              doc.rejection_reason,
+              doc.correction_instructions,
               hg.decision AS hr_verification_decision
             FROM onboarding_cases oc
             JOIN candidates c ON c.id = oc.candidate_id
+            LEFT JOIN LATERAL (
+              SELECT rejection_reason, correction_instructions
+              FROM documents
+              WHERE case_id = oc.id
+                AND (rejection_reason IS NOT NULL OR correction_instructions IS NOT NULL)
+              ORDER BY COALESCE(validated_at, submitted_at, created_at) DESC
+              LIMIT 1
+            ) doc ON TRUE
             LEFT JOIN LATERAL (
               SELECT decision
               FROM hil_gates
@@ -109,6 +120,7 @@ class V1Service:
                 "ini": f"{first[:1]}{last[:1]}".upper() or "AE",
                 "role": row["role"] or "New Joiner",
                 "dept": row["department"] or "Onboarding",
+                "owner": self._hr_owner(row["department"], row["office_location"]),
                 "phase": phase,
                 "phaseKey": row["phase"],
                 "st": status,
@@ -118,6 +130,8 @@ class V1Service:
                 "prog": progress,
                 "it": self._label(row["it_status"]),
                 "docs": docs,
+                "rejectionReason": row["rejection_reason"],
+                "correctionInstructions": row["correction_instructions"],
                 "backgroundVerification": row["hr_verification_decision"],
                 "scenario": self._scenario(status, phase),
                 "slaLabel": "SLA Watch" if status in {"blocked", "at-risk"} else "On Track",
@@ -167,6 +181,8 @@ class V1Service:
             raise HTTPException(status_code=404, detail="Case not found")
         case["timeline"] = await MvpReadService().audit(case_ref=case_ref, limit=50)
         case["hil_gates"] = [gate for gate in await self.hil_gates() if gate["case_number"] == case["caseId"]]
+        case["documents"] = await self.documents(case_ref)
+        case["followUps"] = await self.follow_ups(case_ref)
         return case
 
     async def hil_gates(self) -> list[dict]:
@@ -418,7 +434,12 @@ class V1Service:
                 description,
                 date.today() + timedelta(days=3),
             )
-        for follow_type, days in [("7_day", 7), ("3_day", 3), ("0_day", 0)]:
+        candidate_values = dict(candidate)
+        joining_date = candidate_values.get("joining_date") or date.today()
+        if isinstance(joining_date, datetime):
+            joining_date = joining_date.date()
+        for follow_type, days_before in [("t_minus_7", 7), ("t_minus_3", 3), ("t_plus_0", 0)]:
+            scheduled_at = datetime.combine(joining_date - timedelta(days=days_before), datetime.min.time()).replace(hour=9)
             await execute(
                 """
                 INSERT INTO follow_ups (case_id, follow_up_type, scheduled_at, channel, response_status, notes, created_at)
@@ -426,7 +447,7 @@ class V1Service:
                 """,
                 case["id"],
                 follow_type,
-                datetime.utcnow() + timedelta(days=days),
+                scheduled_at,
             )
         await execute(
             """
@@ -524,6 +545,20 @@ class V1Service:
     def _risk_score(status: str, progress: int) -> int:
         base = {"completed": 5, "in-progress": 25, "hil": 55, "at-risk": 78, "blocked": 92}.get(status, 30)
         return min(99, base + max(0, 60 - int(progress or 0)) // 6)
+
+    @staticmethod
+    def _hr_owner(department: str | None, office_location: str | None) -> str:
+        location = (office_location or "").lower()
+        department_value = (department or "").lower()
+        if any(city in location for city in ["hyderabad", "bangalore", "bengaluru"]):
+            return "Priya Nair - HR Coordinator"
+        if any(city in location for city in ["mumbai", "pune"]):
+            return "Rohan Mehta - HR Coordinator"
+        if any(team in department_value for team in ["engineering", "it", "security"]):
+            return "Ananya Rao - HR Coordinator"
+        if any(team in department_value for team in ["finance", "legal", "compliance"]):
+            return "Meera Iyer - HR Coordinator"
+        return "HR Coordinator"
 
     async def _post_onboarding_percent(self, case_id) -> int:
         row = await fetch_row("SELECT * FROM post_onboarding_items WHERE case_id = $1 LIMIT 1", case_id)

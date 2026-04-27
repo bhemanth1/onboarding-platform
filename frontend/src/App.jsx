@@ -205,6 +205,21 @@ function badge(status) {
   return <span className={`badge ${status}`}>{statusLabels[status] || status}</span>;
 }
 
+function formatDateTime(value) {
+  if (!value) return "Not scheduled";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatReminderType(value = "") {
+  return String(value)
+    .replace("t_minus_", "T-")
+    .replace("t_plus_", "T+")
+    .replace(/_/g, " ")
+    .toUpperCase();
+}
+
 function PageIcon({ page }) {
   return ICONS[ICON_MAP[page] || "dashboard"];
 }
@@ -438,6 +453,16 @@ function App() {
     setNavOpen(false);
   }
 
+  async function openCaseDetail(item) {
+    setSelectedCase(item);
+    try {
+      const detail = await api.caseDetail(item.caseId || item.id);
+      setSelectedCase({ ...item, ...detail });
+    } catch (err) {
+      setSelectedCase(item);
+    }
+  }
+
   function moveWidget(id, position) {
     setWidgetPositions((current) => ({ ...current, [id]: position }));
   }
@@ -478,7 +503,7 @@ function App() {
                   <main className="win-main">
                     {error && <div className="card" style={{ padding: 14, color: "var(--error)" }}>Backend unavailable: {error}</div>}
                     {!data && !error && <div className="card" style={{ padding: 18 }}>Loading dashboard...</div>}
-                    {data && <PageRenderer page={page} data={data} cases={cases} metrics={metrics} audit={audit} openCase={setSelectedCase} setPage={setPage} />}
+                    {data && <PageRenderer page={page} data={data} cases={cases} metrics={metrics} audit={audit} openCase={openCaseDetail} setPage={setPage} />}
                   </main>
                 </div>
               </div>
@@ -525,7 +550,7 @@ function initialsFromDisplayName(name, fallback = "NJ") {
 function PageRenderer({ page, data, cases, metrics, audit, openCase, setPage }) {
   if (page === "overview") return <Overview metrics={metrics} cases={cases} audit={audit} setPage={setPage} openCase={openCase} />;
   if (page === "cases") return <Cases cases={cases} openCase={openCase} />;
-  if (page === "preonboard") return <PreOnboard cases={cases} />;
+  if (page === "preonboard") return <PreOnboard cases={cases} followUps={data.followUps || []} />;
   if (page === "exceptions") return <Exceptions cases={cases} gates={data.hil_gates} />;
   if (page === "post") return <PostOnboard cases={cases} />;
   if (page === "audit") return <Audit audit={audit} />;
@@ -863,7 +888,7 @@ function Cases({ cases, openCase }) {
   return (
     <div className="card">
       <div className="card-head"><div><div className="card-title">All Active Cases</div><div className="card-sub">Read-only data fetched from backend GET endpoints</div></div></div>
-      <div className="react-table-header"><span>Employee</span><span>Phase</span><span>Status</span><span>Scenario</span><span>Progress</span><span>IT</span><span>Docs</span></div>
+      <div className="react-table-header"><span>Employee</span><span>Owner</span><span>Phase</span><span>Status</span><span>Progress</span><span>IT</span><span>Docs</span></div>
       {cases.map((item) => <CaseRow key={item.caseId} item={item} openCase={openCase} />)}
     </div>
   );
@@ -871,11 +896,11 @@ function Cases({ cases, openCase }) {
 
 function CaseRow({ item, openCase }) {
   return (
-    <div onClick={() => openCase?.(item)} style={{ display: "grid", gridTemplateColumns: "1.8fr 1.15fr 1.1fr 1fr 90px 80px 80px", columnGap: 10, alignItems: "center", padding: "9px 14px", borderBottom: "1px solid var(--n8)", cursor: openCase ? "pointer" : "default" }}>
+    <div onClick={() => openCase?.(item)} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.25fr 1.1fr 1fr 80px 80px 90px", columnGap: 10, alignItems: "center", padding: "9px 14px", borderBottom: "1px solid var(--n8)", cursor: openCase ? "pointer" : "default" }}>
       <div className="emp"><div className="emp-av" style={{ background: item.col }}>{item.ini}</div><div><div className="emp-name">{item.name}</div><div className="emp-role">{item.dept} · {item.caseId}</div></div></div>
+      <div style={{ fontSize: 10.5, color: "var(--n3)" }}>{item.owner}</div>
       <span className={`tag ${phaseTagClass(item.phase)}`}>{item.phase}</span>
       <div>{badge(item.st)}</div>
-      <div style={{ fontSize: 10.5, color: "var(--n3)" }}>{item.scenario}</div>
       <div style={{ fontSize: 11, color: "var(--n3)" }}>{item.prog}%</div>
       <div style={{ fontSize: 11, color: "var(--n3)" }}>{item.it}</div>
       <div style={{ fontSize: 11, color: "var(--n3)" }}>{item.docs}</div>
@@ -883,15 +908,39 @@ function CaseRow({ item, openCase }) {
   );
 }
 
-function PreOnboard({ cases }) {
+function PreOnboard({ cases, followUps }) {
   const rows = cases.filter((item) => item.phase === "Pre-Onboarding");
   return (
+    <div className="g2">
     <div className="card">
       <div className="card-head">
         <div><div className="card-title">Pre-Onboarding Task Panel</div><div className="card-sub">IT provisioning · Admin prep · Candidate follow-ups</div></div>
         <span className="tag purple">{rows.length} Active</span>
       </div>
       <TaskGrid columns={[["Candidate Follow-up", rows.filter((item) => item.docs !== "Verified")], ["IT Provisioning", rows.filter((item) => item.it !== "Completed")], ["Admin Prep", rows]]} />
+    </div>
+    <ReminderPanel followUps={followUps} />
+    </div>
+  );
+}
+
+function ReminderPanel({ followUps = [] }) {
+  const rows = followUps.slice(0, 8);
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div><div className="card-title">Reminders</div><div className="card-sub">Scheduled follow-ups from backend records</div></div>
+        <span className="tag orange">{followUps.filter((item) => !item.sent_at).length} Pending</span>
+      </div>
+      <div className="reminder-list">
+        {!rows.length && <div className="reminder-row"><strong>No reminders returned</strong><span>Waiting for follow-up records</span></div>}
+        {rows.map((item) => (
+          <div className="reminder-row" key={item.id}>
+            <strong>{formatReminderType(item.follow_up_type)} · {item.case_number || item.employee_id}</strong>
+            <span>{formatDateTime(item.scheduled_at)} · {item.sent_at ? "Sent" : item.response_status || "Pending"}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1197,10 +1246,10 @@ function DocumentSubmissionDetails({ item }) {
         )}
         {docs.map((doc) => (
           <div className="employee-doc-row" key={doc.name}>
-            <div><strong>{doc.name}</strong><small>{doc.owner}</small></div>
+            <div><strong>{doc.name}</strong><small>{doc.rejectionReason || doc.correctionInstructions || doc.owner}</small></div>
             <span>{doc.submittedAt}</span>
             <span className={`doc-timing ${doc.timing === "Late" ? "late" : doc.timing === "Pending" ? "pending" : "ontime"}`}>{doc.timing}</span>
-            <span className={`doc-validation ${doc.status.toLowerCase()}`}>{doc.status}</span>
+            <span className={`doc-validation ${doc.status.toLowerCase().replace(/\s+/g, "-")}`}>{doc.status}</span>
           </div>
         ))}
       </div>
@@ -1209,13 +1258,15 @@ function DocumentSubmissionDetails({ item }) {
 }
 
 function getDocumentSubmissions(item = {}) {
-  const documents = item.documents || item.documentRows || item.document_rows || [];
+  const documents = item.documentRows || item.documents || item.document_rows || [];
   return documents.map((doc, index) => ({
     name: doc.document_type || doc.name || doc.type || `Document ${index + 1}`,
     owner: doc.owner || doc.source || doc.uploaded_by || "-",
     submittedAt: doc.submitted_at || doc.created_at || "-",
     timing: doc.timing || doc.sla_status || "-",
-    status: doc.status || "Pending"
+    status: doc.status || "Pending",
+    rejectionReason: doc.rejection_reason,
+    correctionInstructions: doc.correction_instructions
   }));
 }
 
@@ -1370,7 +1421,31 @@ function Reports({ analytics }) {
 }
 
 function CaseModal({ item, onClose }) {
-  return <div className="modal-wrap open" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div className="modal-head-ic">□</div><div style={{ flex: 1 }}><div className="modal-title">{item.name} - Case Detail</div><div className="modal-sub">{item.caseId} · {item.phase} · {item.role}</div></div><button className="modal-close" onClick={onClose}>x</button></div><div className="modal-body"><div className="g2"><InfoBox title="Summary" rows={[["Employee ID", item.id], ["Department", item.dept], ["Scenario", item.scenario], ["SLA", item.slaLabel]]} /><InfoBox title="Status" rows={[["Case Status", statusLabels[item.st] || item.st], ["IT", item.it], ["Documents", item.docs], ["Risk Score", item.riskScore]]} /></div></div><div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>Close</button></div></div></div>;
+  const rejectionRows = [
+    item.rejectionReason && ["Rejection Reason", item.rejectionReason],
+    item.correctionInstructions && ["Correction", item.correctionInstructions]
+  ].filter(Boolean);
+  return (
+    <div className="modal-wrap open" onClick={onClose}>
+      <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-head-ic">□</div>
+          <div style={{ flex: 1 }}><div className="modal-title">{item.name} - Case Detail</div><div className="modal-sub">{item.caseId} · {item.phase} · {item.role}</div></div>
+          <button className="modal-close" onClick={onClose}>x</button>
+        </div>
+        <div className="modal-body">
+          <div className="g2">
+            <InfoBox title="Summary" rows={[["Employee ID", item.id], ["Department", item.dept], ["Owner", item.owner], ["SLA", item.slaLabel]]} />
+            <InfoBox title="Status" rows={[["Case Status", statusLabels[item.st] || item.st], ["IT", item.it], ["Documents", item.docs], ["Risk Score", item.riskScore]]} />
+          </div>
+          {!!rejectionRows.length && <InfoBox title="Document Remediation" rows={rejectionRows} />}
+          <ReminderPanel followUps={item.followUps || []} />
+          <DocumentSubmissionDetails item={item} />
+        </div>
+        <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
 }
 
 function EmbeddedAppWindow({ app, onClose }) {

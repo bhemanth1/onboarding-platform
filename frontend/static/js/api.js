@@ -2,8 +2,9 @@
  * API Service - Handles all backend communication
  */
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-const API_BASE = `${BACKEND_URL}/dana-aegis/api`;
+const BACKEND_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5001').replace(/\/+$/, '');
+const API_PREFIX = BACKEND_URL.endsWith('/dana-aegis') ? BACKEND_URL : `${BACKEND_URL}/dana-aegis`;
+const API_BASE = `${API_PREFIX}/api`;
 
 class APIService {
   static async request(endpoint, options = {}) {
@@ -101,7 +102,7 @@ class APIService {
   // Health check
   static async health() {
     try {
-      const response = await fetch(`${BACKEND_URL}/dana-aegis/health`);
+      const response = await fetch(`${API_PREFIX}/health`);
       if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
       return response.json();
     } catch (error) {

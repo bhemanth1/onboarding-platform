@@ -40,15 +40,7 @@ app.add_middleware(
     allow_headers=settings.CORS_ALLOW_HEADERS,
 )
 
-# Include routers. The /dana-aegis prefix is the public frontend-facing API
-# namespace; legacy unprefixed routes stay available for existing integrations.
-app.include_router(employee_router)
-app.include_router(onboarding_router)
-app.include_router(hil_router)
-app.include_router(audit_router)
-app.include_router(dashboard_router)
-app.include_router(mvp_router)
-app.include_router(v1_router)
+# Include routers under the public frontend-facing API namespace.
 app.include_router(employee_router, prefix="/dana-aegis")
 app.include_router(onboarding_router, prefix="/dana-aegis")
 app.include_router(hil_router, prefix="/dana-aegis")
@@ -83,7 +75,6 @@ if os.path.isdir(DIST_ASSETS_DIR):
     app.mount("/assets", StaticFiles(directory=DIST_ASSETS_DIR), name="assets")
 
 # Health check
-@app.get("/health")
 def health_check():
     """Health check endpoint"""
     return {
