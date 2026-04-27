@@ -20,7 +20,7 @@ The MVP reads from the AegisAI PostgreSQL database when `backend/.env` contains 
 
 ```powershell
 cd "C:\Users\USER\Downloads\101 apples\mvp\aegis-desktop\backend"
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
 ```
 
 ### Backend with Docker
@@ -28,7 +28,7 @@ cd "C:\Users\USER\Downloads\101 apples\mvp\aegis-desktop\backend"
 ```powershell
 cd "C:\Users\USER\Downloads\101 apples\mvp\aegis-desktop\backend"
 docker build -t aegis-backend-test .
-docker run --env-file .env -p 8000:8000 aegis-backend-test
+docker run --env-file .env -p 5000:5000 aegis-backend-test
 ```
 
 Without `--env-file .env`, the `/api/v1` dashboard, case, audit, and HIL read endpoints fall back to the local SQLite demo data.
@@ -44,10 +44,11 @@ npm.cmd run dev
 Open:
 
 - React dev app: http://127.0.0.1:5173/
-- Built app served by backend: http://127.0.0.1:8000/
-- API docs: http://127.0.0.1:8000/docs
-- Bootstrap data: http://127.0.0.1:8000/api/bootstrap
-- MVP dashboard data: http://127.0.0.1:8000/api/mvp/dashboard
+- React dev app: http://127.0.0.1:5000/
+- Built app served by backend: http://127.0.0.1:5000/
+- API docs: http://127.0.0.1:5000/docs
+- Bootstrap data: http://127.0.0.1:5000/api/bootstrap
+- MVP dashboard data: http://127.0.0.1:5000/api/mvp/dashboard
 
 ### Seed MVP Dummy Data
 

@@ -50,6 +50,78 @@ const ROLE_CONFIG = {
   }
 };
 
+const ROUTE_BASE = "/dana-aegis-fe";
+const DESKTOP_ROUTE = `${ROUTE_BASE}/`;
+const PAGE_TO_ROUTE = {
+  overview: "/hr/dashboard",
+  cases: "/hr/cases",
+  preonboard: "/hr/pre-onboard",
+  exceptions: "/hr/exceptions",
+  post: "/hr/post-onboard",
+  audit: "/hr/audit",
+  reports: "/hr/reports",
+  "ops-dashboard": "/ops/dashboard",
+  "hil-approvals": "/ops/approvals",
+  sla: "/ops/sla",
+  "emp-portal": "/employee/portal",
+  "emp-docs": "/employee/documents",
+  "it-queue": "/it/queue",
+  "it-active": "/it/active",
+  "it-done": "/it/completed",
+  "admin-tasks": "/admin/tasks",
+  "admin-desk": "/admin/desks",
+  "admin-id": "/admin/id-cards"
+};
+const ROLE_PAGE_ROUTES = {
+  "HR Coordinator": {
+    overview: "/hr/dashboard",
+    cases: "/hr/cases",
+    preonboard: "/hr/pre-onboard",
+    exceptions: "/hr/exceptions",
+    post: "/hr/post-onboard",
+    audit: "/hr/audit",
+    reports: "/hr/reports"
+  },
+  "HR Ops Manager": {
+    "ops-dashboard": "/ops/dashboard",
+    "hil-approvals": "/ops/approvals",
+    exceptions: "/ops/exceptions",
+    sla: "/ops/sla",
+    audit: "/ops/audit",
+    reports: "/ops/reports"
+  },
+  "Onboarding Employee": {
+    "emp-portal": "/employee/portal",
+    "emp-docs": "/employee/documents"
+  },
+  "IT Support": {
+    "it-queue": "/it/queue",
+    "it-active": "/it/active",
+    "it-done": "/it/completed"
+  },
+  "Admin Team": {
+    "admin-tasks": "/admin/tasks",
+    "admin-desk": "/admin/desks",
+    "admin-id": "/admin/id-cards"
+  }
+};
+const ROUTE_TO_STATE = Object.fromEntries(
+  Object.entries(ROLE_PAGE_ROUTES).flatMap(([roleName, routes]) =>
+    Object.entries(routes).map(([page, route]) => [route, { page, role: roleName }])
+  )
+);
+const LEGACY_ROUTE_TO_STATE = {
+  "/dashboard": { page: "overview", role: "HR Coordinator" },
+  "/cases": { page: "cases", role: "HR Coordinator" },
+  "/pre-onboard": { page: "preonboard", role: "HR Coordinator" },
+  "/exceptions": { page: "exceptions", role: "HR Coordinator" },
+  "/post-onboard": { page: "post", role: "HR Coordinator" },
+  "/audit": { page: "audit", role: "HR Coordinator" },
+  "/reports": { page: "reports", role: "HR Coordinator" },
+  "/approvals": { page: "hil-approvals", role: "HR Ops Manager" },
+  "/sla": { page: "sla", role: "HR Ops Manager" }
+};
+
 const PAGE_META = {
   overview: ["HR Coordinator - Dashboard", "Pipeline health · Active cases · Lifecycle overview"],
   cases: ["All Active Cases", "Full lifecycle view · employees"],
@@ -160,13 +232,67 @@ function getDefaultWidgetPositions() {
   };
 }
 
+function routeStateFromLocation() {
+  const fallback = { page: ROLE_CONFIG["HR Coordinator"].defaultPage, role: "HR Coordinator" };
+  if (typeof window === "undefined") return fallback;
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (!pathname.startsWith(ROUTE_BASE)) return fallback;
+  const route = pathname.slice(ROUTE_BASE.length) || "/hr/dashboard";
+  return ROUTE_TO_STATE[route] || LEGACY_ROUTE_TO_STATE[route] || fallback;
+}
+
+function pageFromLocation() {
+  return routeStateFromLocation().page;
+}
+
+function roleFromLocation() {
+  return routeStateFromLocation().role;
+}
+
+function isDesktopLocation() {
+  if (typeof window === "undefined") return false;
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  return pathname === ROUTE_BASE;
+}
+
+function initialWindowMode() {
+  return isDesktopLocation() ? "minimized" : "open";
+}
+
+function routeForPage(page, roleName = roleForPage(page)) {
+  const roleRoutes = ROLE_PAGE_ROUTES[roleName] || {};
+  const route = roleRoutes[page] || PAGE_TO_ROUTE[page] || PAGE_TO_ROUTE.overview;
+  return `${ROUTE_BASE}${route}`;
+}
+
+function roleForPage(page) {
+  return Object.entries(ROLE_CONFIG).find(([, config]) =>
+    config.nav.some((item) => item.page === page)
+  )?.[0] || "HR Coordinator";
+}
+
+function syncRoute(page, roleName, replace = false) {
+  if (typeof window === "undefined") return;
+  const nextPath = routeForPage(page, roleName);
+  if (window.location.pathname === nextPath) return;
+  const method = replace ? "replaceState" : "pushState";
+  window.history[method]({ page, role: roleName }, "", `${nextPath}${window.location.search}`);
+}
+
+function syncDesktopRoute(replace = false) {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === DESKTOP_ROUTE) return;
+  const method = replace ? "replaceState" : "pushState";
+  window.history[method]({ desktop: true }, "", `${DESKTOP_ROUTE}${window.location.search}`);
+}
+
 function App() {
-  const [role, setRole] = useState("HR Coordinator");
-  const [page, setPage] = useState(ROLE_CONFIG["HR Coordinator"].defaultPage);
+  const [page, setPage] = useState(pageFromLocation);
+  const [role, setRole] = useState(roleFromLocation);
   const [roleOpen, setRoleOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(true);
-  const [windowMode, setWindowMode] = useState("open");
+  const [windowMode, setWindowMode] = useState(initialWindowMode);
   const [isMaximized, setIsMaximized] = useState(false);
   const [widgetPositions, setWidgetPositions] = useState(getDefaultWidgetPositions);
   const [data, setData] = useState(null);
@@ -219,6 +345,24 @@ function App() {
     return () => window.removeEventListener("resize", clampWidgetsToViewport);
   }, []);
 
+  useEffect(() => {
+    if (windowMode === "open") {
+      syncRoute(page, role, true);
+    } else {
+      syncDesktopRoute(true);
+    }
+    function handlePopState() {
+      const nextState = routeStateFromLocation();
+      setPage(nextState.page);
+      setRole(nextState.role);
+      setWindowMode(isDesktopLocation() ? "minimized" : "open");
+      setNavOpen(false);
+      setRoleOpen(false);
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   const metrics = data?.metrics || {};
   const cases = data?.cases || [];
   const audit = data?.audit || [];
@@ -236,7 +380,9 @@ function App() {
 
   function switchRole(nextRole) {
     setRole(nextRole);
-    setPage(roleConfigs[nextRole].defaultPage);
+    const nextPage = roleConfigs[nextRole].defaultPage;
+    setPage(nextPage);
+    syncRoute(nextPage, nextRole);
     setRoleOpen(false);
     setNavOpen(false);
     setWindowMode("open");
@@ -244,6 +390,7 @@ function App() {
 
   function closeWindow() {
     setWindowMode("closed");
+    syncDesktopRoute();
     setRoleOpen(false);
     setNavOpen(false);
   }
@@ -252,20 +399,24 @@ function App() {
     if (isMaximized) {
       setIsMaximized(false);
       setWindowMode("open");
+      syncRoute(page, role);
       return;
     }
     setWindowMode("minimized");
+    syncDesktopRoute();
     setRoleOpen(false);
     setNavOpen(false);
   }
 
   function toggleMaximizeWindow() {
     setWindowMode("open");
+    syncRoute(page, role);
     setIsMaximized((value) => !value);
   }
 
   function restoreWindow() {
     setWindowMode("open");
+    syncRoute(page, role);
   }
 
   function toggleRoleMenu() {
@@ -282,6 +433,7 @@ function App() {
 
   function openPage(nextPage) {
     setPage(nextPage);
+    syncRoute(nextPage, role);
     setWindowMode("open");
     setNavOpen(false);
   }

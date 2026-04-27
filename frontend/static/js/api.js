@@ -2,7 +2,8 @@
  * API Service - Handles all backend communication
  */
 
-const API_BASE = 'http://localhost:8000/api';
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const API_BASE = `${BACKEND_URL}/dana-aegis/api`;
 
 class APIService {
   static async request(endpoint, options = {}) {
@@ -100,7 +101,9 @@ class APIService {
   // Health check
   static async health() {
     try {
-      return await this.request('/health');
+      const response = await fetch(`${BACKEND_URL}/dana-aegis/health`);
+      if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+      return response.json();
     } catch (error) {
       console.warn('Backend not available:', error);
       return null;

@@ -54,18 +54,20 @@
     });
   }
 
+  const API_PREFIX = "/dana-aegis";
+
   window.AegisAPI = {
-    bootstrap: () => request("/api/bootstrap"),
-    cases: () => request("/api/onboarding/cases/"),
-    case: (id) => request(`/api/onboarding/cases/${id}`),
-    activity: () => request("/api/audit/activity"),
+    bootstrap: () => request(`${API_PREFIX}/api/bootstrap`),
+    cases: () => request(`${API_PREFIX}/api/onboarding/cases/`),
+    case: (id) => request(`${API_PREFIX}/api/onboarding/cases/${id}`),
+    activity: () => request(`${API_PREFIX}/api/audit/activity`),
     approveGate: (gateId, notes) =>
-      request(`/api/hil/gates/${gateId}/approve`, {
+      request(`${API_PREFIX}/api/hil/gates/${gateId}/approve`, {
         method: "PUT",
         body: JSON.stringify({ decision_notes: notes || "" }),
       }),
     sendBackgroundVerification: (caseRef) =>
-      request(`/api/hil/background-verification/send${caseRef ? `?case_ref=${encodeURIComponent(caseRef)}` : ""}`, {
+      request(`${API_PREFIX}/api/hil/background-verification/send${caseRef ? `?case_ref=${encodeURIComponent(caseRef)}` : ""}`, {
         method: "POST",
       }),
   };

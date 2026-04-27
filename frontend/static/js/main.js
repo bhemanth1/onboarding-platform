@@ -1,3 +1,3 @@
 document.addEventListener('DOMContentLoaded', () => {
-  fetch('/health').catch(() => undefined);
+  fetch('/dana-aegis/health').catch(() => undefined);
 });

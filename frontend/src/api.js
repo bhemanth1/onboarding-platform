@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || "/dana-aegis";
 const COLORS = ["#0E2E89", "#16A34A", "#E4902E", "#22D3EE", "#7C3AED", "#E11D48", "#CF008B", "#0E766E", "#6366F1", "#F97316"];
 
 async function get(path) {

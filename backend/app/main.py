@@ -40,7 +40,8 @@ app.add_middleware(
     allow_headers=settings.CORS_ALLOW_HEADERS,
 )
 
-# Include routers
+# Include routers. The /dana-aegis prefix is the public frontend-facing API
+# namespace; legacy unprefixed routes stay available for existing integrations.
 app.include_router(employee_router)
 app.include_router(onboarding_router)
 app.include_router(hil_router)
@@ -48,6 +49,13 @@ app.include_router(audit_router)
 app.include_router(dashboard_router)
 app.include_router(mvp_router)
 app.include_router(v1_router)
+app.include_router(employee_router, prefix="/dana-aegis")
+app.include_router(onboarding_router, prefix="/dana-aegis")
+app.include_router(hil_router, prefix="/dana-aegis")
+app.include_router(audit_router, prefix="/dana-aegis")
+app.include_router(dashboard_router, prefix="/dana-aegis")
+app.include_router(mvp_router, prefix="/dana-aegis")
+app.include_router(v1_router, prefix="/dana-aegis")
 
 
 @app.on_event("startup")
@@ -84,6 +92,11 @@ def health_check():
         "version": settings.API_VERSION
     }
 
+@app.get("/dana-aegis/health")
+def prefixed_health_check():
+    """Health check endpoint under the public API namespace."""
+    return health_check()
+
 @app.get("/")
 def root():
     """Serve the desktop frontend view."""
@@ -94,6 +107,12 @@ def root():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"name": settings.API_TITLE, "version": settings.API_VERSION, "docs_url": "/docs"}
+
+@app.get("/dana-aegis-fe")
+@app.get("/dana-aegis-fe/{full_path:path}")
+def frontend_route(full_path: str = ""):
+    """Serve the React app for browser page routes."""
+    return root()
 
 if __name__ == "__main__":
     import uvicorn

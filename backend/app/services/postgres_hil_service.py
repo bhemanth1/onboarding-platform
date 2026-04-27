@@ -61,8 +61,8 @@ async def trigger_background_verification(case_ref: str | None = None) -> dict:
             "gate_id": str(existing["id"]),
             "email_sent_to": existing["email_sent_to"],
             "email_result": {"sent": False, "reason": "Pending gate already exists; no duplicate email sent"},
-            "approve_url": f"{settings.BACKEND_URL}/api/hil/webhook/approve?token={existing['approval_token']}",
-            "reject_url": f"{settings.BACKEND_URL}/api/hil/webhook/reject?token={existing['approval_token']}",
+                    "approve_url": f"{settings.BACKEND_URL}/dana-aegis/api/hil/webhook/approve?token={existing['approval_token']}",
+                    "reject_url": f"{settings.BACKEND_URL}/dana-aegis/api/hil/webhook/reject?token={existing['approval_token']}",
         }
 
     gate = await fetch_row(
@@ -109,8 +109,8 @@ async def trigger_background_verification(case_ref: str | None = None) -> dict:
         "gate_id": str(gate["id"]),
         "email_sent_to": gate["email_sent_to"],
         "email_result": email_result,
-        "approve_url": f"{settings.BACKEND_URL}/api/hil/webhook/approve?token={token}",
-        "reject_url": f"{settings.BACKEND_URL}/api/hil/webhook/reject?token={token}",
+                    "approve_url": f"{settings.BACKEND_URL}/dana-aegis/api/hil/webhook/approve?token={token}",
+                    "reject_url": f"{settings.BACKEND_URL}/dana-aegis/api/hil/webhook/reject?token={token}",
     }
 
 
@@ -266,8 +266,8 @@ def _send_hil_email(candidate_name: str, case_number: str, token: str, flag_desc
     if not settings.MAIL_USERNAME or not settings.MAIL_PASSWORD or not settings.HR_APPROVER_EMAIL:
         return {"sent": False, "reason": "Mail credentials or HR recipient missing"}
 
-    approve_url = f"{settings.BACKEND_URL}/api/hil/webhook/approve?token={token}"
-    reject_url = f"{settings.BACKEND_URL}/api/hil/webhook/reject?token={token}"
+        approve_url = f"{settings.BACKEND_URL}/dana-aegis/api/hil/webhook/approve?token={token}"
+        reject_url = f"{settings.BACKEND_URL}/dana-aegis/api/hil/webhook/reject?token={token}"
     subject = f"aegis.ai HIL Approval - Background Verification - {candidate_name}"
     html = f"""
     <html>
