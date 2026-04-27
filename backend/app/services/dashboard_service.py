@@ -106,37 +106,23 @@ class DashboardService:
         }
 
     def exceptions(self) -> list[dict]:
+        rows = self.db.execute(
+            """
+            SELECT hg.id, hg.gate_name, hg.status, hg.description, oc.employee_name
+            FROM hil_gates hg
+            JOIN onboarding_cases oc ON oc.id = hg.case_id
+            WHERE hg.status IN ('pending', 'blocked', 'rejected')
+            ORDER BY hg.created_at DESC
+            """
+        ).fetchall()
         return [
             {
-                "tag": "BLOCKER",
-                "tc": "blocker",
-                "emp": "System-Wide",
-                "type": "F01 - GDPR consent flow missing",
-                "desc": "No consent capture at portal entry. System collects sensitive personal data with no defined legal basis.",
-                "hil": True,
-            },
-            {
-                "tag": "BLOCKER",
-                "tc": "blocker",
-                "emp": "James O'Brien",
-                "type": "F08 - No deprovisioning path defined",
-                "desc": "Candidate paused mid-process. Withdrawal cleanup needs HR approval.",
-                "hil": True,
-            },
-            {
-                "tag": "HIGH",
-                "tc": "high",
-                "emp": "Priya Kapoor",
-                "type": "F06 - Joining date amendment needed",
-                "desc": "Visa processing delay requested date change from 28 Apr to 12 May.",
-                "hil": False,
-            },
-            {
-                "tag": "HIGH",
-                "tc": "high",
-                "emp": "Multiple Cases",
-                "type": "F04 - API retry logic undefined",
-                "desc": "Provisioning API calls failed and require retry handling.",
-                "hil": False,
-            },
+                "tag": "HIL" if row["status"] == "pending" else "BLOCKER",
+                "tc": "hil" if row["status"] == "pending" else "blocker",
+                "emp": row["employee_name"],
+                "type": row["gate_name"],
+                "desc": row["description"],
+                "hil": row["status"] == "pending",
+            }
+            for row in rows
         ]

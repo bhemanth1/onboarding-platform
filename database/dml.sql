@@ -60,3 +60,21 @@ VALUES (
     'Pre-onboarding started', 'created',
     'AG-HR-0426-001', NOW()
 );
+
+-- Role profiles used by the frontend role switcher
+INSERT INTO role_profiles (
+    role_name, display_name, initials, color, sort_order, is_active, created_at, updated_at
+)
+VALUES
+    ('HR Coordinator', 'Jagadeeswar R', 'JR', '#5929d0', 1, TRUE, NOW(), NOW()),
+    ('HR Ops Manager', 'Nandita Mehta', 'NM', '#CF008B', 2, TRUE, NOW(), NOW()),
+    ('Onboarding Employee', 'Amina Yusuf', 'AY', '#0E2E89', 3, TRUE, NOW(), NOW()),
+    ('IT Support', 'Kiran Patel', 'KP', '#E4902E', 4, TRUE, NOW(), NOW()),
+    ('Admin Team', 'Asha Rao', 'AR', '#16A34A', 5, TRUE, NOW(), NOW())
+ON CONFLICT (role_name) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    initials = EXCLUDED.initials,
+    color = EXCLUDED.color,
+    sort_order = EXCLUDED.sort_order,
+    is_active = EXCLUDED.is_active,
+    updated_at = NOW();

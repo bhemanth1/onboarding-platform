@@ -95,9 +95,9 @@
         });
       }, 5000);
     } catch (error) {
-      console.warn("AEGIS API unavailable, running local prototype data.", error);
+      console.warn("AEGIS API unavailable, backend data unavailable.", error);
       const status = document.getElementById("sb-action-text");
-      if (status) status.textContent = "Offline demo data active";
+      if (status) status.textContent = "Backend unavailable";
     }
   });
 })();

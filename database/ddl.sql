@@ -98,3 +98,15 @@ CREATE TABLE audit_logs (
     agent_id VARCHAR(50),
     created_at TIMESTAMP
 );
+
+-- Role Profiles
+CREATE TABLE role_profiles (
+    role_name VARCHAR(100) PRIMARY KEY,
+    display_name VARCHAR(150) NOT NULL,
+    initials VARCHAR(10),
+    color VARCHAR(20),
+    sort_order INT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);

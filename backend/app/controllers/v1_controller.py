@@ -40,6 +40,11 @@ async def cases():
     return await _service().cases()
 
 
+@router.get("/profiles")
+async def profiles():
+    return await _service().profiles()
+
+
 @router.get("/cases/{case_ref}")
 async def case_detail(case_ref: str):
     return await _service().case_detail(case_ref)

@@ -215,28 +215,7 @@ class MvpReadService:
 
     @staticmethod
     def workflow_summary() -> dict:
-        return {
-            "newJoiner": [
-                "Recruitment trigger",
-                "7/3/0 day reminders",
-                "Basic info submission check",
-                "HR exception review",
-                "IT/Admin assignment",
-                "Country/tax forms",
-                "Validation retry",
-                "Payroll handoff",
-                "Welcome and completion",
-            ],
-            "hrCoordinator": [
-                "Dashboard overview",
-                "IT/Admin task monitoring",
-                "Reminder response tracking",
-                "Basic information exception review",
-                "Document validation monitoring",
-                "Bank/payroll status",
-                "Reports and audit logs",
-            ],
-        }
+        return {"newJoiner": [], "hrCoordinator": []}
 
     @staticmethod
     def _scenario(case: dict) -> str:

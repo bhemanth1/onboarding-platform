@@ -960,6 +960,15 @@ body {
   background: #D7F9F4;
 }
 
+.lc-empty {
+  border: 1px dashed var(--n7);
+  border-radius: var(--r-sm);
+  color: var(--n5);
+  font-size: 11px;
+  padding: 10px;
+  text-align: center;
+}
+
 .clock-widget {
   width: 324px;
   min-height: 152px;

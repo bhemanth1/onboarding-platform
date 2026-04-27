@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from ..config import settings
+from ..database.db import get_db_connection
 from ..database.postgres import execute, fetch_row, fetch_rows, postgres_enabled
 from .mvp_read_service import MvpReadService
 
@@ -124,6 +125,33 @@ class V1Service:
                 "col": ["#0E2E89", "#16A34A", "#E4902E", "#22D3EE", "#7C3AED", "#E11D48", "#CF008B", "#0E766E"][index % 8],
             })
         return cases
+
+    async def profiles(self) -> list[dict]:
+        if not postgres_enabled():
+            conn = get_db_connection()
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT role_name, display_name, initials, color, sort_order
+                    FROM role_profiles
+                    WHERE COALESCE(is_active, 1) = 1
+                    ORDER BY sort_order ASC, role_name ASC
+                    """
+                ).fetchall()
+                return [_profile_dict(dict(row)) for row in rows]
+            finally:
+                conn.close()
+
+        await self._ensure_role_profiles()
+        rows = await fetch_rows(
+            """
+            SELECT role_name, display_name, initials, color, sort_order
+            FROM role_profiles
+            WHERE COALESCE(is_active, TRUE) = TRUE
+            ORDER BY sort_order ASC, role_name ASC
+            """
+        )
+        return [_profile_dict(dict(row)) for row in rows]
 
     async def case_detail(self, case_ref: str) -> dict:
         cases = await self.cases()
@@ -406,13 +434,29 @@ class V1Service:
               case_id, candidate_id, employee_id, phase, event_type, rule_ref,
               rule_version, event_description, outcome, agent_id, created_at
             )
-            VALUES ($1, $2, $3, 'pre_onboarding', 'trigger', 'BR-001', 'v1.3', $4, 'created', $5, NOW())
+            VALUES ($1, $2, $3, 'pre_onboarding', 'trigger', NULL, NULL, $4, 'created', $5, NOW())
             """,
             case["id"],
             candidate["id"],
             case["employee_id"],
             f"Pre-onboarding workflow triggered for {candidate['first_name']} {candidate['last_name']}.",
             settings.AGENT_ID,
+        )
+
+    async def _ensure_role_profiles(self) -> None:
+        await execute(
+            """
+            CREATE TABLE IF NOT EXISTS role_profiles (
+              role_name VARCHAR(100) PRIMARY KEY,
+              display_name VARCHAR(150) NOT NULL,
+              initials VARCHAR(10),
+              color VARCHAR(20),
+              sort_order INT,
+              is_active BOOLEAN DEFAULT TRUE,
+              created_at TIMESTAMP DEFAULT NOW(),
+              updated_at TIMESTAMP DEFAULT NOW()
+            )
+            """
         )
 
     async def _find_case(self, case_ref: str):
@@ -522,6 +566,23 @@ async def table_columns(table: str) -> set[str]:
 
 def _serialise_rows(rows) -> list[dict]:
     return [_serialise(dict(row)) for row in rows]
+
+
+def _profile_dict(row: dict) -> dict:
+    return {
+        "role": row.get("role_name"),
+        "name": row.get("display_name"),
+        "initials": row.get("initials") or _initials(row.get("display_name")),
+        "color": row.get("color") or "#0E2E89",
+        "sortOrder": row.get("sort_order") or 0,
+    }
+
+
+def _initials(name: str | None) -> str:
+    parts = [part for part in (name or "").split() if part]
+    if not parts:
+        return "NA"
+    return "".join(part[0] for part in parts[:2]).upper()
 
 
 def _serialise(value):

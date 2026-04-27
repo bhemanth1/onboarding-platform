@@ -3,9 +3,6 @@ import { api } from "./api";
 
 const ROLE_CONFIG = {
   "HR Coordinator": {
-    color: "#5929d0",
-    initials: "JR",
-    name: "Jagadeeswar R",
     nav: [
       { label: "Dashboard", icon: "D", page: "overview" },
       { label: "Cases", icon: "C", page: "cases", badgeKey: "active" },
@@ -18,9 +15,6 @@ const ROLE_CONFIG = {
     defaultPage: "overview"
   },
   "HR Ops Manager": {
-    color: "#CF008B",
-    initials: "NM",
-    name: "Nandita Mehta",
     nav: [
       { label: "Dashboard", icon: "D", page: "ops-dashboard" },
       { label: "Approvals", icon: "H", page: "hil-approvals", badgeKey: "pendingHil" },
@@ -32,9 +26,6 @@ const ROLE_CONFIG = {
     defaultPage: "ops-dashboard"
   },
   "Onboarding Employee": {
-    color: "#0E2E89",
-    initials: "AY",
-    name: "Amina Yusuf",
     nav: [
       { label: "My Portal", icon: "M", page: "emp-portal" },
       { label: "Documents", icon: "D", page: "emp-docs" }
@@ -42,9 +33,6 @@ const ROLE_CONFIG = {
     defaultPage: "emp-portal"
   },
   "IT Support": {
-    color: "#E4902E",
-    initials: "KP",
-    name: "Kiran Patel",
     nav: [
       { label: "Queue", icon: "Q", page: "it-queue", badgeKey: "itQueue" },
       { label: "Active", icon: "A", page: "it-active" },
@@ -53,9 +41,6 @@ const ROLE_CONFIG = {
     defaultPage: "it-queue"
   },
   "Admin Team": {
-    color: "#16A34A",
-    initials: "AR",
-    name: "Asha Rao",
     nav: [
       { label: "Task Board", icon: "T", page: "admin-tasks", badgeKey: "adminTasks" },
       { label: "Desks", icon: "D", page: "admin-desk" },
@@ -237,7 +222,8 @@ function App() {
   const metrics = data?.metrics || {};
   const cases = data?.cases || [];
   const audit = data?.audit || [];
-  const roleConfigs = useMemo(() => buildRoleConfigs(cases), [cases]);
+  const profiles = data?.profiles || [];
+  const roleConfigs = useMemo(() => buildRoleConfigs(profiles, cases), [profiles, cases]);
   const currentRole = roleConfigs[role] || ROLE_CONFIG[role];
   const meta = PAGE_META[page] || [page, ""];
   const derivedCounts = useMemo(() => ({
@@ -346,7 +332,7 @@ function App() {
               </div>
               <Statusbar audit={audit} source={data?.source} role={role} count={cases.length} />
             </div>
-            <LiveCommentary open={liveOpen} role={role} audit={audit} cases={cases} />
+            <LiveCommentary open={liveOpen} role={role} audit={audit} cases={cases} gates={data?.hil_gates || []} />
           </div>
         </div>
       </div>
@@ -358,18 +344,24 @@ function App() {
   );
 }
 
-function buildRoleConfigs(cases) {
+function buildRoleConfigs(profiles, cases) {
+  const profileByRole = new Map((profiles || []).map((profile) => [profile.role, profile]));
   const employeeCase = pickEmployeeCase(cases);
-  if (!employeeCase?.name) return ROLE_CONFIG;
-  return {
-    ...ROLE_CONFIG,
-    "Onboarding Employee": {
-      ...ROLE_CONFIG["Onboarding Employee"],
-      color: employeeCase.col || ROLE_CONFIG["Onboarding Employee"].color,
-      initials: employeeCase.ini || initialsFromDisplayName(employeeCase.name, ROLE_CONFIG["Onboarding Employee"].initials),
-      name: employeeCase.name
-    }
-  };
+  return Object.fromEntries(Object.entries(ROLE_CONFIG).map(([roleName, config]) => {
+    const profile = roleName === "Onboarding Employee" && employeeCase?.name
+      ? {
+          name: employeeCase.name,
+          initials: employeeCase.ini || initialsFromDisplayName(employeeCase.name, "NA"),
+          color: employeeCase.col
+        }
+      : profileByRole.get(roleName);
+    return [roleName, {
+      ...config,
+      color: profile?.color || "var(--primary)",
+      initials: profile?.initials || initialsFromDisplayName(profile?.name || roleName, "NA"),
+      name: profile?.name || roleName
+    }];
+  }));
 }
 
 function initialsFromDisplayName(name, fallback = "NJ") {
@@ -452,44 +444,8 @@ function DashboardMenu({ page, nav, counts, onNavigate }) {
   );
 }
 
-function LiveCommentary({ open, role, audit, cases }) {
-  const recent = audit.slice(0, 8);
-  const common = {
-    pre: cases.filter((item) => item.phase === "Pre-Onboarding").length,
-    onboard: cases.filter((item) => item.phase === "Onboarding").length,
-    post: cases.filter((item) => item.phase === "Post-Onboarding" || item.phase === "Completed").length,
-    hil: cases.filter((item) => item.st === "hil").length,
-    risk: cases.filter((item) => item.st === "at-risk" || item.st === "blocked").length
-  };
-  const roleGroups = {
-    "HR Coordinator": [
-      ["Pre-Onboarding", "#5929d0", [["trigger", `Candidate intake active for ${common.pre} pre-onboarding cases.`], ["activity", "IT provisioning, admin prep, and candidate reminders are being monitored from backend data."], ["audit", recent[0] ? `${recent[0].emp}: ${recent[0].ev}` : "Waiting for first backend activity event."]]],
-      ["Onboarding", "#CF008B", [["activity", `${common.onboard} onboarding cases are moving through document, HIL, and setup checks.`], ["hil", `${common.hil} cases currently need human approval.`], ["alert", `${common.risk} cases need closer attention.`]]],
-      ["Post-Onboarding", "#0E766E", [["activity", `${common.post} cases are in post-onboarding or complete.`], ["audit", recent[1] ? `${recent[1].emp}: ${recent[1].ev}` : "Post-onboarding audit stream is ready."], ["activity", "Payroll, buddy assignment, and closure status stay visible in the lifecycle views."]]]
-    ],
-    "HR Ops Manager": [
-      ["Approvals", "#CF008B", [["hil", `${common.hil} HIL approvals are waiting for decision.`], ["alert", `${common.risk} SLA or blocker items need manager visibility.`], ["audit", recent[0] ? `${recent[0].emp}: ${recent[0].ev}` : "Approval audit stream is ready."]]],
-      ["SLA Monitor", "#E4902E", [["activity", "Pipeline health is being recalculated from GET analytics."], ["alert", "At-risk cases are surfaced for escalation review."], ["audit", recent[1] ? `${recent[1].emp}: ${recent[1].ev}` : "SLA watcher is waiting for events."]]],
-      ["Reports", "#0E766E", [["activity", "Completion, department, and document validation metrics are available."], ["audit", "Manager dashboard is synced with backend summary counts."]]]
-    ],
-    "Onboarding Employee": [
-      ["My Portal", "#0E2E89", [["activity", "Your document state and onboarding progress are visible in one place."], ["trigger", "Pending items are highlighted from the current onboarding case."], ["audit", "Profile data is refreshed from the backend read model."]]],
-      ["Documents", "#5929d0", [["activity", "Document submission and validation states are tracked."], ["alert", "Incomplete items remain visible until resolved."]]],
-      ["Onboarding Loop", "#0E766E", [["activity", "Milestones update as HR, IT, payroll, PF, bank details, mail, and approval steps complete."]]]
-    ],
-    "IT Support": [
-      ["Provisioning", "#E4902E", [["trigger", `${cases.filter((item) => item.it !== "Completed").length} IT provisioning requests need review.`], ["activity", "Laptop, email, and access readiness are grouped by case."], ["alert", `${cases.filter((item) => item.it?.includes("Failed") || item.st === "blocked").length} IT-linked blockers are visible.`]]],
-      ["Active Tasks", "#5929d0", [["activity", "In-progress setup work stays visible in the active task view."], ["audit", recent[0] ? `${recent[0].emp}: ${recent[0].ev}` : "IT activity stream is ready."]]],
-      ["Completed", "#0E766E", [["activity", "Completed provisioning cases remain available for verification."]]]
-    ],
-    "Admin Team": [
-      ["Desk Prep", "#16A34A", [["trigger", `${cases.filter((item) => item.phase !== "Completed").length} admin preparation tasks are queued.`], ["activity", "Desk, ID card, and access card work is grouped by task board."], ["alert", `${common.pre} upcoming joiners need pre-joining logistics.`]]],
-      ["ID Cards", "#E4902E", [["activity", "Photo, print, and access activation statuses are tracked."], ["audit", recent[0] ? `${recent[0].emp}: ${recent[0].ev}` : "Admin audit stream is ready."]]],
-      ["Access", "#0E766E", [["activity", "Physical access readiness is visible for post-joining support."]]]
-    ]
-  };
-  const phaseGroups = (roleGroups[role] || roleGroups["HR Coordinator"]).map(([label, color, events]) => ({ label, color, events }));
-  const events = phaseGroups.flatMap((group) => group.events.map(([type, text]) => ({ type, text, color: group.color })));
+function LiveCommentary({ open, role, audit, cases, gates }) {
+  const events = buildLiveCommentaryEvents(role, audit, cases, gates);
 
   return (
     <aside className={`lc-panel ${open ? "open" : ""}`} id="lc-panel">
@@ -500,9 +456,12 @@ function LiveCommentary({ open, role, audit, cases }) {
       </div>
       <div className="lc-scroll">
         <div className="lc-feed">
-          {events.map((event, index) => (
-            <div className="lc-ev new" style={{ "--evc": event.color }} key={`${event.type}-${index}`}>
-              <div className="lc-ev-ts"><span className={`lc-tag ${event.type}`}>{event.type}</span><span>now</span></div>
+          {events.length === 0 && (
+            <div className="lc-empty">No live records returned by the database yet.</div>
+          )}
+          {events.map((event) => (
+            <div className="lc-ev new" style={{ "--evc": event.color }} key={event.id}>
+              <div className="lc-ev-ts"><span className={`lc-tag ${event.type}`}>{event.type}</span><span>{event.time}</span></div>
               <div className="lc-ev-text">{event.text}</div>
             </div>
           ))}
@@ -510,6 +469,102 @@ function LiveCommentary({ open, role, audit, cases }) {
       </div>
     </aside>
   );
+}
+
+function buildLiveCommentaryEvents(role, audit = [], cases = [], gates = []) {
+  const scopedCases = filterCasesForRole(role, cases);
+  const scopedCaseKeys = new Set(scopedCases.flatMap((item) => [item.caseId, item.id, item.employee_id].filter(Boolean)));
+  const employeeCase = role === "Onboarding Employee" ? pickEmployeeCase(cases) : null;
+  const employeeKeys = new Set([employeeCase?.caseId, employeeCase?.id, employeeCase?.employee_id, employeeCase?.name].filter(Boolean));
+
+  const auditEvents = audit
+    .filter((item) => {
+      if (role === "Onboarding Employee") return employeeKeys.has(item.case) || employeeKeys.has(item.emp);
+      if (!scopedCaseKeys.size) return true;
+      return !item.case || scopedCaseKeys.has(item.case);
+    })
+    .slice(0, 8)
+    .map((item, index) => ({
+      id: `audit-${item.case || "system"}-${item.ts || index}-${index}`,
+      type: liveTypeFromAudit(item),
+      color: liveColorFromAudit(item),
+      time: item.ts || item.created_at || "",
+      text: [item.emp, item.case, item.phase, item.ev, item.out].filter(Boolean).join(" · ")
+    }));
+
+  const hilEvents = gates
+    .filter((item) => {
+      if (role === "Onboarding Employee") return employeeKeys.has(item.case_number) || employeeKeys.has(item.employee_id) || employeeKeys.has(item.candidate_name);
+      if (role === "IT Support" || role === "Admin Team") return false;
+      return !scopedCaseKeys.size || scopedCaseKeys.has(item.case_number) || scopedCaseKeys.has(item.employee_id);
+    })
+    .slice(0, 5)
+    .map((item, index) => ({
+      id: `hil-${item.gate_id || item.case_number || index}`,
+      type: item.decision === "pending" ? "hil" : "audit",
+      color: item.decision === "pending" ? "#CF008B" : "#0E766E",
+      time: item.decided_at || item.email_sent_at || item.token_expires_at || "",
+      text: [item.candidate_name, item.case_number, item.gate_type, item.decision, item.flag_description, item.email_sent_to].filter(Boolean).join(" · ")
+    }));
+
+  const caseEvents = scopedCases
+    .slice(0, 8)
+    .map((item, index) => ({
+      id: `case-${item.caseId || item.id || index}`,
+      type: liveTypeFromCase(item),
+      color: item.col || liveColorFromCase(item),
+      time: item.join || item.updated_at || item.created_at || "",
+      text: [item.name, item.caseId, item.phase, statusLabels[item.st] || item.st, `${item.prog || 0}%`, item.docs, item.it, item.slaLabel].filter(Boolean).join(" · ")
+    }));
+
+  return [...auditEvents, ...hilEvents, ...caseEvents].slice(0, 16);
+}
+
+function filterCasesForRole(role, cases = []) {
+  if (role === "Onboarding Employee") {
+    const employeeCase = pickEmployeeCase(cases);
+    return employeeCase?.caseId || employeeCase?.id ? [employeeCase] : [];
+  }
+  if (role === "HR Ops Manager") {
+    return cases.filter((item) => item.st === "hil" || item.st === "at-risk" || item.st === "blocked");
+  }
+  if (role === "IT Support") {
+    return cases.filter((item) => item.it && item.it !== "Completed" && item.it !== "Provisioned");
+  }
+  if (role === "Admin Team") {
+    return cases.filter((item) => item.phase === "Pre-Onboarding" || item.phase === "Onboarding");
+  }
+  return cases;
+}
+
+function liveTypeFromAudit(item = {}) {
+  const value = `${item.ev || ""} ${item.out || ""}`.toLowerCase();
+  if (value.includes("hil") || value.includes("approval")) return "hil";
+  if (value.includes("alert") || value.includes("blocked") || value.includes("failed") || value.includes("rejected")) return "alert";
+  if (value.includes("trigger") || value.includes("created")) return "trigger";
+  return "audit";
+}
+
+function liveColorFromAudit(item = {}) {
+  const type = liveTypeFromAudit(item);
+  if (type === "alert") return "#E4902E";
+  if (type === "hil") return "#CF008B";
+  if (type === "trigger") return "#5929d0";
+  return "#0E766E";
+}
+
+function liveTypeFromCase(item = {}) {
+  if (item.st === "hil") return "hil";
+  if (item.st === "blocked" || item.st === "at-risk") return "alert";
+  if (item.phase === "Pre-Onboarding") return "trigger";
+  return "activity";
+}
+
+function liveColorFromCase(item = {}) {
+  if (item.st === "blocked" || item.st === "at-risk") return "#E4902E";
+  if (item.st === "hil") return "#CF008B";
+  if (item.phase === "Pre-Onboarding") return "#5929d0";
+  return "#0E766E";
 }
 
 function DraggableWidget({ className, position, onMove, children }) {
@@ -594,7 +649,7 @@ function Overview({ metrics, cases, audit, setPage, openCase }) {
       <div className="g2">
         <div className="card">
           <div className="card-head">
-            <div><div className="card-title">Active Pipeline</div><div className="card-sub">Realtime GET polling · scenario-rich dummy data</div></div>
+            <div><div className="card-title">Active Pipeline</div><div className="card-sub">Realtime GET polling · backend case data</div></div>
             <button className="btn btn-ghost btn-sm" onClick={() => setPage("cases")}>View All →</button>
           </div>
           <div style={{ padding: 0, maxHeight: 340, overflowY: "auto" }}>
@@ -980,6 +1035,14 @@ function DocumentSubmissionDetails({ item }) {
       </div>
       <div className="employee-doc-table">
         <div className="employee-doc-head"><span>Document</span><span>Submitted</span><span>Timing</span><span>Validation</span></div>
+        {!docs.length && (
+          <div className="employee-doc-row">
+            <div><strong>No document rows returned</strong><small>Waiting for backend document records</small></div>
+            <span>-</span>
+            <span className="doc-timing pending">Pending</span>
+            <span className="doc-validation pending">Pending</span>
+          </div>
+        )}
         {docs.map((doc) => (
           <div className="employee-doc-row" key={doc.name}>
             <div><strong>{doc.name}</strong><small>{doc.owner}</small></div>
@@ -994,17 +1057,14 @@ function DocumentSubmissionDetails({ item }) {
 }
 
 function getDocumentSubmissions(item = {}) {
-  const verified = isCompleteStatus(getBackendField(item, "docs", "docsStatus", "docs_status", "documentStatus", "document_status"));
-  const bankDone = isCompleteStatus(getBackendField(item, "bankStatus", "bank_status", "bankDetailsStatus", "bank_details_status"));
-  const taxDone = isCompleteStatus(getBackendField(item, "payrollStatus", "payroll_status", "taxStatus", "tax_status"));
-  const baseDay = Number(String(item.caseId || "1001").replace(/\D/g, "").slice(-2)) || 9;
-  return [
-    { name: "Identity Proof", owner: "Candidate upload", submittedAt: `Apr ${Math.max(1, baseDay - 5)}, 2026 - 09:42 AM`, timing: "On time", status: "Validated" },
-    { name: "Address Proof", owner: "Candidate upload", submittedAt: `Apr ${Math.max(1, baseDay - 4)}, 2026 - 11:18 AM`, timing: "On time", status: verified ? "Validated" : "Review" },
-    { name: "Education Certificates", owner: "Candidate upload", submittedAt: `Apr ${Math.max(1, baseDay - 2)}, 2026 - 04:35 PM`, timing: item.st === "blocked" ? "Late" : "On time", status: item.st === "blocked" ? "Review" : "Validated" },
-    { name: "Bank Details", owner: "Payroll record", submittedAt: bankDone ? `Apr ${Math.max(1, baseDay - 1)}, 2026 - 02:10 PM` : "Not submitted", timing: bankDone ? "On time" : "Pending", status: bankDone ? "Validated" : "Pending" },
-    { name: "Tax Declaration", owner: "Payroll record", submittedAt: taxDone ? `Apr ${baseDay}, 2026 - 10:05 AM` : "Not submitted", timing: taxDone ? "On time" : "Pending", status: taxDone ? "Validated" : "Pending" }
-  ];
+  const documents = item.documents || item.documentRows || item.document_rows || [];
+  return documents.map((doc, index) => ({
+    name: doc.document_type || doc.name || doc.type || `Document ${index + 1}`,
+    owner: doc.owner || doc.source || doc.uploaded_by || "-",
+    submittedAt: doc.submitted_at || doc.created_at || "-",
+    timing: doc.timing || doc.sla_status || "-",
+    status: doc.status || "Pending"
+  }));
 }
 
 function ItQueue({ cases }) {
@@ -1146,7 +1206,7 @@ function AuditMini({ item }) {
 }
 
 function AuditRow({ item }) {
-  return <div style={{ display: "flex", gap: 10, padding: "9px 16px", borderBottom: "1px solid var(--n8)", alignItems: "flex-start" }}><div style={{ fontSize: 9.5, color: "var(--n5)", minWidth: 46 }}>{item.ts}</div><span className={`al-dot ${item.dot || "p"}`} /><div style={{ flex: 1 }}><div style={{ fontSize: 11.5, fontWeight: 600 }}>{item.emp} · {item.case}</div><div style={{ fontSize: 10.5, color: "var(--n4)" }}>{item.ev} [{item.rule}]</div></div><span className="tag purple">{item.out || item.phase}</span></div>;
+  return <div style={{ display: "flex", gap: 10, padding: "9px 16px", borderBottom: "1px solid var(--n8)", alignItems: "flex-start" }}><div style={{ fontSize: 9.5, color: "var(--n5)", minWidth: 46 }}>{item.ts}</div><span className={`al-dot ${item.dot || "p"}`} /><div style={{ flex: 1 }}><div style={{ fontSize: 11.5, fontWeight: 600 }}>{item.emp} · {item.case}</div><div style={{ fontSize: 10.5, color: "var(--n4)" }}>{item.ev}</div></div><span className="tag purple">{item.out || item.phase}</span></div>;
 }
 
 function WorkflowCard({ title, items }) {
@@ -1180,12 +1240,6 @@ function EmbeddedAppWindow({ app, onClose }) {
 }
 
 function OfficeAppPreview({ app }) {
-  const rows = {
-    outlook: ["Welcome email queued for new joiners", "Document validation update received", "IT provisioning reminder sent"],
-    calendar: ["09:30 HR onboarding sync", "11:00 IT provisioning review", "15:00 New joiner welcome call"],
-    teams: ["HR Ops: HIL approval pending", "IT Support: Laptop allocation updated", "Admin Team: Desk 7A reserved"],
-    excel: ["Active cases: 22", "Pending HIL: 3", "Average progress: 53%"]
-  };
   return (
     <div className={`office-preview ${app.key}`}>
       <div className="office-preview-hero">
@@ -1197,12 +1251,10 @@ function OfficeAppPreview({ app }) {
         <a className="btn btn-primary btn-sm" href={app.href} target="_blank" rel="noreferrer">Open Microsoft {app.label}</a>
       </div>
       <div className="office-preview-list">
-        {rows[app.key].map((row, index) => (
-          <div className="office-preview-row" key={row}>
-            <span className="office-preview-dot">{index + 1}</span>
-            <span>{row}</span>
-          </div>
-        ))}
+        <div className="office-preview-row">
+          <span className="office-preview-dot">-</span>
+          <span>No workspace records returned by the backend for this preview.</span>
+        </div>
       </div>
     </div>
   );

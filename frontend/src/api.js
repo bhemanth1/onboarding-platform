@@ -1,22 +1,5 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 const COLORS = ["#0E2E89", "#16A34A", "#E4902E", "#22D3EE", "#7C3AED", "#E11D48", "#CF008B", "#0E766E", "#6366F1", "#F97316"];
-const FALLBACK_NAMES = [
-  "Arjun Mehta",
-  "Nisha Rao",
-  "Daniel Kim",
-  "Maya Iyer",
-  "Omar Hassan",
-  "Elena Petrova",
-  "Karthik Menon",
-  "Sofia Garcia",
-  "Lucas Meyer",
-  "Amina Yusuf",
-  "Wei Zhang",
-  "Fatima Khan",
-  "Noah Wilson",
-  "Rohit Sharma",
-  "Priya Nair"
-];
 
 async function get(path) {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -86,9 +69,7 @@ function displayNameFromCase(item, index = 0) {
   const joinedName = [item.first_name, item.last_name].filter(Boolean).join(" ");
   const directName = item.name || item.candidate_name || joinedName;
   if (directName && !/^EMP[-\s]/i.test(directName)) return directName;
-  const numeric = Number(String(item.employee_id || item.case_number || "").match(/(\d{4})$/)?.[1]);
-  if (numeric) return FALLBACK_NAMES[(numeric - 1) % FALLBACK_NAMES.length];
-  return FALLBACK_NAMES[index % FALLBACK_NAMES.length];
+  return item.employee_id || item.case_number || item.id || `Case ${index + 1}`;
 }
 
 function normalizeCase(item, index = 0) {
@@ -152,11 +133,12 @@ function normaliseMetrics(kpis = {}, cases = []) {
 }
 
 async function dashboard() {
-  const [kpis, rawCases, audit, hil] = await Promise.all([
+  const [kpis, rawCases, audit, hil, profiles] = await Promise.all([
     get("/api/v1/dashboard/kpis"),
     get("/api/v1/cases"),
     get("/api/v1/audit/live?limit=100"),
-    get("/api/v1/hil")
+    get("/api/v1/hil"),
+    get("/api/v1/profiles")
   ]);
   const cases = normalizeCases(rawCases);
   const analytics = analyticsFromCases(cases);
@@ -168,23 +150,19 @@ async function dashboard() {
     cases,
     audit,
     analytics,
+    profiles,
     hil_gates: hil,
-    workflow: {
-      newJoiner: ["Recruitment trigger", "Document submission", "HR verification", "IT and HRMS setup", "Tax/PF configuration", "Bank details collection", "Onboarding mail", "HR approval"],
-      hrCoordinator: ["Dashboard overview", "Task monitoring", "Document validation", "HIL review", "Reports and audit logs"]
-    }
+    workflow: { newJoiner: [], hrCoordinator: [] }
   };
 }
 
 export const api = {
   dashboard,
   cases: async () => normalizeCases(await get("/api/v1/cases")),
+  profiles: () => get("/api/v1/profiles"),
   caseDetail: async (caseRef) => normalizeCase(await get(`/api/v1/cases/${encodeURIComponent(caseRef)}`)),
   analytics: async () => analyticsFromCases(normalizeCases(await get("/api/v1/cases"))),
   audit: () => get("/api/v1/audit/live?limit=100"),
   hil: () => get("/api/v1/hil"),
-  workflows: async () => ({
-    newJoiner: ["Recruitment trigger", "Document submission", "HR verification", "IT and HRMS setup", "Tax/PF configuration", "Bank details collection", "Onboarding mail", "HR approval"],
-    hrCoordinator: ["Dashboard overview", "Task monitoring", "Document validation", "HIL review", "Reports and audit logs"]
-  })
+  workflows: async () => ({ newJoiner: [], hrCoordinator: [] })
 };
