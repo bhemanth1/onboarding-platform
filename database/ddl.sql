@@ -1,5 +1,10 @@
+-- Create schema
+CREATE SCHEMA IF NOT EXISTS dana;
+
+SET search_path TO dana;
+
 -- Candidates
-CREATE TABLE candidates (
+CREATE TABLE IF NOT EXISTS candidates (
     id SERIAL PRIMARY KEY,
     first_name VARCHAR(100),
     last_name VARCHAR(100),
@@ -12,15 +17,15 @@ CREATE TABLE candidates (
     employee_type VARCHAR(50),
     office_location VARCHAR(100),
     nationality VARCHAR(50),
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Onboarding Cases
-CREATE TABLE onboarding_cases (
+CREATE TABLE IF NOT EXISTS onboarding_cases (
     id SERIAL PRIMARY KEY,
     case_number VARCHAR(50) UNIQUE,
-    candidate_id INT REFERENCES candidates(id),
+    candidate_id INT REFERENCES candidates(id) ON DELETE CASCADE,
     employee_id VARCHAR(50),
     phase VARCHAR(50),
     status VARCHAR(50),
@@ -32,30 +37,30 @@ CREATE TABLE onboarding_cases (
     docs_status VARCHAR(50),
     payroll_status VARCHAR(50),
     pf_status VARCHAR(50),
-    is_completed BOOLEAN,
+    is_completed BOOLEAN DEFAULT FALSE,
     completed_at TIMESTAMP,
-    sla_breach BOOLEAN,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
+    sla_breach BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Pre-onboarding Tasks
-CREATE TABLE pre_onboarding_tasks (
+CREATE TABLE IF NOT EXISTS pre_onboarding_tasks (
     id SERIAL PRIMARY KEY,
-    case_id INT REFERENCES onboarding_cases(id),
+    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
     task_type VARCHAR(100),
     assigned_team VARCHAR(50),
     description TEXT,
     due_date DATE,
     status VARCHAR(50),
     sla_compliant BOOLEAN,
-    created_at TIMESTAMP
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Follow Ups
-CREATE TABLE follow_ups (
+CREATE TABLE IF NOT EXISTS follow_ups (
     id SERIAL PRIMARY KEY,
-    case_id INT REFERENCES onboarding_cases(id),
+    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
     follow_up_type VARCHAR(50),
     scheduled_at TIMESTAMP,
     sent_at TIMESTAMP,
@@ -63,13 +68,13 @@ CREATE TABLE follow_ups (
     response_status VARCHAR(50),
     responded_at TIMESTAMP,
     notes TEXT,
-    created_at TIMESTAMP
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- HIL Gates
-CREATE TABLE hil_gates (
+CREATE TABLE IF NOT EXISTS hil_gates (
     id SERIAL PRIMARY KEY,
-    case_id INT REFERENCES onboarding_cases(id),
+    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
     gate_type VARCHAR(100),
     decision VARCHAR(50),
     decided_at TIMESTAMP,
@@ -79,12 +84,12 @@ CREATE TABLE hil_gates (
     token_expires_at TIMESTAMP,
     email_sent_to VARCHAR(255),
     email_sent_at TIMESTAMP,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Audit Logs (append-only)
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     case_id INT,
     candidate_id INT,
@@ -96,17 +101,17 @@ CREATE TABLE audit_logs (
     event_description TEXT,
     outcome VARCHAR(50),
     agent_id VARCHAR(50),
-    created_at TIMESTAMP
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Role Profiles
-CREATE TABLE role_profiles (
+CREATE TABLE IF NOT EXISTS role_profiles (
     role_name VARCHAR(100) PRIMARY KEY,
     display_name VARCHAR(150) NOT NULL,
     initials VARCHAR(10),
     color VARCHAR(20),
     sort_order INT,
     is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
