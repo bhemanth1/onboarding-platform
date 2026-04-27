@@ -234,10 +234,11 @@ function App() {
     return () => window.removeEventListener("resize", clampWidgetsToViewport);
   }, []);
 
-  const currentRole = ROLE_CONFIG[role];
   const metrics = data?.metrics || {};
   const cases = data?.cases || [];
   const audit = data?.audit || [];
+  const roleConfigs = useMemo(() => buildRoleConfigs(cases), [cases]);
+  const currentRole = roleConfigs[role] || ROLE_CONFIG[role];
   const meta = PAGE_META[page] || [page, ""];
   const derivedCounts = useMemo(() => ({
     active: metrics.active || 0,
@@ -249,7 +250,7 @@ function App() {
 
   function switchRole(nextRole) {
     setRole(nextRole);
-    setPage(ROLE_CONFIG[nextRole].defaultPage);
+    setPage(roleConfigs[nextRole].defaultPage);
     setRoleOpen(false);
     setNavOpen(false);
     setWindowMode("open");
@@ -350,11 +351,31 @@ function App() {
         </div>
       </div>
       <Taskbar roleConfig={currentRole} role={role} clock={clock} onRoleClick={toggleRoleMenu} onStartClick={restoreWindow} windowMode={windowMode} onOpenOfficeApp={setEmbeddedApp} />
-      {roleOpen && <RoleDropdown role={role} switchRole={switchRole} />}
+      {roleOpen && <RoleDropdown role={role} roleConfigs={roleConfigs} switchRole={switchRole} />}
       {embeddedApp && <EmbeddedAppWindow app={embeddedApp} onClose={() => setEmbeddedApp(null)} />}
       {selectedCase && <CaseModal item={selectedCase} onClose={() => setSelectedCase(null)} />}
     </div>
   );
+}
+
+function buildRoleConfigs(cases) {
+  const employeeCase = pickEmployeeCase(cases);
+  if (!employeeCase?.name) return ROLE_CONFIG;
+  return {
+    ...ROLE_CONFIG,
+    "Onboarding Employee": {
+      ...ROLE_CONFIG["Onboarding Employee"],
+      color: employeeCase.col || ROLE_CONFIG["Onboarding Employee"].color,
+      initials: employeeCase.ini || initialsFromDisplayName(employeeCase.name, ROLE_CONFIG["Onboarding Employee"].initials),
+      name: employeeCase.name
+    }
+  };
+}
+
+function initialsFromDisplayName(name, fallback = "NJ") {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return fallback;
+  return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
 function PageRenderer({ page, data, cases, metrics, audit, openCase, setPage }) {
@@ -396,11 +417,11 @@ function Titlebar({ role, roleConfig, onRoleClick, onClose, onMinimize, onMaximi
   );
 }
 
-function RoleDropdown({ role, switchRole }) {
+function RoleDropdown({ role, roleConfigs, switchRole }) {
   return (
     <div className="role-dropdown open" id="role-dropdown">
       <div className="role-dd-head"><div className="role-dd-title">Switch Role</div></div>
-      {Object.entries(ROLE_CONFIG).map(([name, config]) => (
+      {Object.entries(roleConfigs).map(([name, config]) => (
         <button key={name} className={`role-dd-item react-shell-button ${role === name ? "selected" : ""}`} onClick={() => switchRole(name)}>
           <div className="role-av" style={{ background: config.color }}>{config.initials}</div>
           <div className="role-dd-info">

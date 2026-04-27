@@ -23,6 +23,16 @@ cd "C:\Users\USER\Downloads\101 apples\mvp\aegis-desktop\backend"
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
+### Backend with Docker
+
+```powershell
+cd "C:\Users\USER\Downloads\101 apples\mvp\aegis-desktop\backend"
+docker build -t aegis-backend-test .
+docker run --env-file .env -p 8000:8000 aegis-backend-test
+```
+
+Without `--env-file .env`, the `/api/v1` dashboard, case, audit, and HIL read endpoints fall back to the local SQLite demo data.
+
 ### React Frontend
 
 ```powershell

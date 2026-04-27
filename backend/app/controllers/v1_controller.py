@@ -17,9 +17,12 @@ router = APIRouter(prefix="/api/v1", tags=["brd-v1"])
 
 
 def _service() -> V1Service:
-    if not postgres_enabled():
-        raise HTTPException(status_code=400, detail="PostgreSQL DB_CON_STR is required for /api/v1 endpoints")
     return V1Service()
+
+
+def _require_postgres() -> None:
+    if not postgres_enabled():
+        raise HTTPException(status_code=400, detail="PostgreSQL DB_CON_STR is required for this /api/v1 endpoint")
 
 
 @router.get("/dashboard/kpis")
@@ -44,16 +47,19 @@ async def case_detail(case_ref: str):
 
 @router.get("/pre-onboarding/tasks")
 async def pre_onboarding_tasks(case_ref: str | None = None):
+    _require_postgres()
     return await _service().pre_onboarding_tasks(case_ref)
 
 
 @router.post("/pre-onboarding/tasks/{case_ref}/recalculate")
 async def recalculate_case_progress(case_ref: str):
+    _require_postgres()
     return await _service().recalculate_and_save_progress(case_ref)
 
 
 @router.post("/pre-onboarding/tasks/recalculate-all")
 async def recalculate_all_progress():
+    _require_postgres()
     service = _service()
     updated = []
     for case in await service.cases():
@@ -63,6 +69,7 @@ async def recalculate_all_progress():
 
 @router.get("/pre-onboarding/follow-ups")
 async def follow_ups(case_ref: str | None = None):
+    _require_postgres()
     return await _service().follow_ups(case_ref)
 
 
@@ -78,6 +85,7 @@ async def hil_stats():
 
 @router.post("/hil/sync-case-statuses")
 async def sync_hil_case_statuses():
+    _require_postgres()
     return await _service().sync_hil_case_statuses()
 
 
@@ -88,21 +96,25 @@ async def audit_live(limit: int = Query(default=50, ge=1, le=200)):
 
 @router.get("/post-onboarding")
 async def post_onboarding(case_ref: str | None = None):
+    _require_postgres()
     return await _service().post_onboarding(case_ref)
 
 
 @router.get("/documents/{case_ref}")
 async def documents(case_ref: str):
+    _require_postgres()
     return await _service().documents(case_ref)
 
 
 @router.post("/documents/{case_ref}")
 async def create_document(case_ref: str, payload: dict[str, Any] = Body(default_factory=dict)):
+    _require_postgres()
     return await _service().create_document(case_ref, payload)
 
 
 @router.get("/provisioning/{case_ref}")
 async def provisioning(case_ref: str):
+    _require_postgres()
     return await _service().provisioning(case_ref)
 
 
@@ -113,17 +125,20 @@ async def report(report_id: str):
 
 @router.post("/candidates", status_code=201)
 async def create_candidate(payload: dict[str, Any] = Body(...)):
+    _require_postgres()
     return await _service().create_candidate(payload)
 
 
 @router.get("/webhooks/hil/approve", response_class=HTMLResponse)
 async def approve_hil(token: str):
+    _require_postgres()
     decision = await decide_by_token(token, "approved")
     return _decision_page(decision)
 
 
 @router.get("/webhooks/hil/reject", response_class=HTMLResponse)
 async def reject_hil(token: str):
+    _require_postgres()
     decision = await decide_by_token(token, "rejected")
     return _decision_page(decision)
 

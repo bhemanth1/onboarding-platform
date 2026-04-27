@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date, datetime
 
+from ..database.db import get_db_connection
 from ..database.postgres import fetch_row, fetch_rows, postgres_enabled
 from .dashboard_service import DashboardService
 from .postgres_dashboard_service import PostgresDashboardService
@@ -71,7 +72,8 @@ class MvpReadService:
 
     async def cases(self) -> list[dict]:
         if not postgres_enabled():
-            return DashboardService(None).bootstrap()["employees"]
+            with get_db_connection() as db:
+                return DashboardService(db).bootstrap()["employees"]
 
         cases = await PostgresDashboardService().desktop_cases()
         for item in cases:
@@ -118,7 +120,8 @@ class MvpReadService:
 
     async def audit(self, limit: int = 50, case_ref: str | None = None) -> list[dict]:
         if not postgres_enabled():
-            return DashboardService(None).audit_events(limit)
+            with get_db_connection() as db:
+                return DashboardService(db).audit_events(limit)
 
         where = ""
         args: list = [limit]
