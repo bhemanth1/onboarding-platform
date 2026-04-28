@@ -45,6 +45,12 @@ async def profiles():
     return await _service().profiles()
 
 
+@router.get("/cases/stats")
+async def cases_stats():
+    _require_postgres()
+    return await _service().cases_stats()
+
+
 @router.get("/cases/{case_ref}")
 async def case_detail(case_ref: str):
     return await _service().case_detail(case_ref)
@@ -133,6 +139,12 @@ async def consents(case_ref: str):
 async def email_templates():
     _require_postgres()
     return await _service().email_templates()
+
+
+@router.get("/reports/export")
+async def export_report(report_id: str = Query(..., description="r01, r03, r04, or r06")):
+    _require_postgres()
+    return await _service().export_report_csv(report_id)
 
 
 @router.get("/reports/{report_id}")

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
+import TaxPayrollPanel from "./components/TaxPayrollPanel";
+import WelcomeTrackingPanel from "./components/WelcomeTrackingPanel";
+import ReportsPage from "./components/ReportsPage";
 
 const ROLE_CONFIG = {
   "HR Coordinator": {
@@ -47,6 +50,24 @@ const ROLE_CONFIG = {
       { label: "ID Cards", icon: "I", page: "admin-id" }
     ],
     defaultPage: "admin-tasks"
+  },
+  // F1 — Compliance Reviewer
+  "Compliance Reviewer": {
+    nav: [
+      { label: "Statutory Forms", icon: "S", page: "tax-payroll" },
+      { label: "Reports", icon: "R", page: "reports" },
+      { label: "Audit", icon: "A", page: "audit" }
+    ],
+    defaultPage: "tax-payroll"
+  },
+  // F2 — HR Platform Engineer
+  "HR Platform Engineer": {
+    nav: [
+      { label: "Welcome Tracker", icon: "W", page: "welcome-tracking" },
+      { label: "SLA Monitor", icon: "S", page: "sla" },
+      { label: "Audit", icon: "A", page: "audit" },
+    ],
+    defaultPage: "welcome-tracking"
   }
 };
 
@@ -70,7 +91,9 @@ const PAGE_TO_ROUTE = {
   "it-done": "/it/completed",
   "admin-tasks": "/admin/tasks",
   "admin-desk": "/admin/desks",
-  "admin-id": "/admin/id-cards"
+  "admin-id": "/admin/id-cards",
+  "tax-payroll": "/compliance/statutory",
+  "welcome-tracking": "/platform/welcome"
 };
 const ROLE_PAGE_ROUTES = {
   "HR Coordinator": {
@@ -103,6 +126,16 @@ const ROLE_PAGE_ROUTES = {
     "admin-tasks": "/admin/tasks",
     "admin-desk": "/admin/desks",
     "admin-id": "/admin/id-cards"
+  },
+  "Compliance Reviewer": {
+    "tax-payroll": "/compliance/statutory",
+    reports: "/compliance/reports",
+    audit: "/compliance/audit"
+  },
+  "HR Platform Engineer": {
+    "welcome-tracking": "/platform/welcome",
+    sla: "/platform/sla",
+    audit: "/platform/audit"
   }
 };
 const ROUTE_TO_STATE = Object.fromEntries(
@@ -140,7 +173,9 @@ const PAGE_META = {
   "it-done": ["Completed Provisioning", "Provisioning completed this week"],
   "admin-tasks": ["Admin Task Board", "Desk, ID card & access card preparation"],
   "admin-desk": ["Desk Assignments", "Desk allocation tracker"],
-  "admin-id": ["ID Card Status", "Card printing & access activation"]
+  "admin-id": ["ID Card Status", "Card printing & access activation"],
+  "tax-payroll": ["Statutory & Tax Forms", "Compliance · Tax configuration · Payroll setup"],
+  "welcome-tracking": ["Welcome Tracking", "Welcome email · Manager notification · Joining countdown"]
 };
 
 const ROLE_NOTES = {
@@ -148,7 +183,9 @@ const ROLE_NOTES = {
   "HR Ops Manager": "Watch pipeline health, approve HIL requests, review SLA risks, and audit lifecycle activity across all onboarding cohorts.",
   "Onboarding Employee": "Check your onboarding progress, review pending documents, and follow the steps needed before and after joining.",
   "IT Support": "Work through provisioning requests, identify blocked access setup, and confirm laptop, email, and system readiness.",
-  "Admin Team": "Prepare desks, ID cards, access cards, and joining-day logistics for incoming employees."
+  "Admin Team": "Prepare desks, ID cards, access cards, and joining-day logistics for incoming employees.",
+  "Compliance Reviewer": "Review statutory form submissions, verify tax configuration, track compliance status across all active onboarding cases.",
+  "HR Platform Engineer": "Monitor welcome email delivery, track joining countdowns, and oversee SLA compliance."
 };
 
 const ICONS = {
@@ -190,7 +227,9 @@ const ICON_MAP = {
   "it-done": "done",
   "admin-tasks": "tasks",
   "admin-desk": "desk",
-  "admin-id": "idcard"
+  "admin-id": "idcard",
+  "tax-payroll": "cases",
+  "welcome-tracking": "portal"
 };
 
 const statusLabels = {
@@ -503,7 +542,7 @@ function App() {
                   <main className="win-main">
                     {error && <div className="card" style={{ padding: 14, color: "var(--error)" }}>Backend unavailable: {error}</div>}
                     {!data && !error && <div className="card" style={{ padding: 18 }}>Loading dashboard...</div>}
-                    {data && <PageRenderer page={page} data={data} cases={cases} metrics={metrics} audit={audit} openCase={openCaseDetail} setPage={setPage} />}
+                    {data && <PageRenderer page={page} role={role} data={data} cases={cases} metrics={metrics} audit={audit} openCase={openCaseDetail} setPage={setPage} />}
                   </main>
                 </div>
               </div>
@@ -547,14 +586,14 @@ function initialsFromDisplayName(name, fallback = "NJ") {
   return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
-function PageRenderer({ page, data, cases, metrics, audit, openCase, setPage }) {
+function PageRenderer({ page, role, data, cases, metrics, audit, openCase, setPage }) {
   if (page === "overview") return <Overview metrics={metrics} cases={cases} audit={audit} setPage={setPage} openCase={openCase} />;
   if (page === "cases") return <Cases cases={cases} openCase={openCase} />;
   if (page === "preonboard") return <PreOnboard cases={cases} followUps={data.followUps || []} />;
   if (page === "exceptions") return <Exceptions cases={cases} gates={data.hil_gates} />;
   if (page === "post") return <PostOnboard cases={cases} />;
   if (page === "audit") return <Audit audit={audit} />;
-  if (page === "reports") return <Analytics analytics={data.analytics} />;
+  if (page === "reports") return <ReportsPage analytics={data.analytics || {}} cases={cases} metrics={metrics} isHRCoordinator={role === "HR Coordinator"} />;
   if (page === "ops-dashboard") return <OpsDashboard metrics={metrics} cases={cases} gates={data.hil_gates} />;
   if (page === "hil-approvals") return <HilApprovals gates={data.hil_gates} cases={cases} />;
   if (page === "sla") return <SlaMonitor cases={cases} />;
@@ -566,6 +605,8 @@ function PageRenderer({ page, data, cases, metrics, audit, openCase, setPage }) 
   if (page === "admin-tasks") return <AdminTasks cases={cases} />;
   if (page === "admin-desk") return <AdminDesk cases={cases} />;
   if (page === "admin-id") return <AdminId cases={cases} />;
+  if (page === "tax-payroll") return <TaxPayrollPanel cases={cases} />;
+  if (page === "welcome-tracking") return <WelcomeTrackingPanel cases={cases} />;
   return <Overview metrics={metrics} cases={cases} audit={audit} setPage={setPage} openCase={openCase} />;
 }
 
@@ -926,6 +967,12 @@ function PreOnboard({ cases, followUps }) {
   const docsReady  = rows.filter((item) => item.docs === "Verified" || item.docs === "HR Approved").length;
   const itDone     = rows.filter((item) => item.it  === "Completed").length;
   const pending    = followUps.filter((x) => !x.sent_at).length;
+  // D7 — action items: cases with IT failure or blocked docs
+  const actionItems = rows.filter((item) =>
+    String(item.it || "").toLowerCase().includes("failed") ||
+    String(item.it || "").toLowerCase().includes("blocked") ||
+    item.it_admin_action_item_open
+  );
   return (
     <>
       <div className="kpi-grid g3">
@@ -933,17 +980,39 @@ function PreOnboard({ cases, followUps }) {
         <Kpi color="orange" label="Documents Pending"      value={rows.length - docsReady} meta={`${docsReady} verified`} />
         <Kpi color="blue"   label="IT Setup Pending"       value={rows.length - itDone}    meta={`${itDone} provisioned`} />
       </div>
+      {/* D7 — action item open indicator */}
+      {actionItems.length > 0 && (
+        <div className="card" style={{ borderLeft: "3px solid var(--warning)", marginBottom: 8 }}>
+          <div className="card-head">
+            <div>
+              <div className="card-title" style={{ color: "var(--warning)" }}>Action Items Open</div>
+              <div className="card-sub">{actionItems.length} pre-onboarding case{actionItems.length > 1 ? "s" : ""} need attention</div>
+            </div>
+            <span className="tag orange">{actionItems.length}</span>
+          </div>
+          <div style={{ padding: "0 14px 10px" }}>
+            {actionItems.map((item) => (
+              <div key={item.caseId} style={{ display: "flex", gap: 10, padding: "5px 0", borderTop: "1px solid var(--n8)", alignItems: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 600 }}>{item.name}</span>
+                <span style={{ fontSize: 10, color: "var(--n5)" }}>{item.caseId}</span>
+                <span className="tag orange" style={{ marginLeft: "auto", fontSize: 10 }}>{item.it}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="preonboard-layout">
         <div className="card">
           <div className="card-head">
             <div><div className="card-title">Pre-Onboarding Task Panel</div><div className="card-sub">IT provisioning · Admin prep · Candidate follow-ups</div></div>
             <span className="tag purple">{rows.length} Active</span>
           </div>
+          {/* D6 — trigger/completion dates in TaskGrid */}
           <TaskGrid columns={[
             ["Candidate Follow-up", rows.filter((item) => item.docs !== "Verified" && item.docs !== "HR Approved")],
             ["IT Provisioning",     rows.filter((item) => item.it  !== "Completed")],
             ["Admin Prep",          rows],
-          ]} />
+          ]} showDates />
         </div>
         <ReminderPanel followUps={followUps} cases={cases} />
       </div>
@@ -1123,19 +1192,33 @@ function Board({ title, subtitle, rows }) {
   return <div className="card"><div className="card-head"><div><div className="card-title">{title}</div><div className="card-sub">{subtitle}</div></div></div>{rows.map((item) => <CompactCase key={item.caseId} item={item} />)}</div>;
 }
 
-function TaskGrid({ columns }) {
+function TaskGrid({ columns, showDates = false }) {
   return (
     <div className="task-grid">
       {columns.map(([label, rows]) => (
         <div className="task-col" key={label}>
           <div className="task-col-label">{label}</div>
-          {rows.slice(0, 6).map((item) => (
-            <div className="task-item" key={`${label}-${item.caseId}`}>
-              <div className="task-item-name">{item.name}</div>
-              <div className="task-item-meta">{item.dept} · {item.role} · {item.caseId}</div>
-              <div className="task-item-st">{badge(item.st)}</div>
-            </div>
-          ))}
+          {rows.slice(0, 6).map((item) => {
+            const triggerDate = item.join
+              ? new Date(item.join).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+              : null;
+            const completedDate = item.completedAt
+              ? new Date(item.completedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+              : null;
+            return (
+              <div className="task-item" key={`${label}-${item.caseId}`}>
+                <div className="task-item-name">{item.name}</div>
+                <div className="task-item-meta">{item.dept} · {item.role} · {item.caseId}</div>
+                {showDates && (
+                  <div className="task-item-dates" style={{ fontSize: 10, color: "var(--n5)", marginTop: 3 }}>
+                    {triggerDate && <span>Joining: {triggerDate}</span>}
+                    {completedDate && <span style={{ marginLeft: 8, color: "var(--success)" }}>Done: {completedDate}</span>}
+                  </div>
+                )}
+                <div className="task-item-st">{badge(item.st)}</div>
+              </div>
+            );
+          })}
         </div>
       ))}
     </div>
@@ -1198,10 +1281,94 @@ function HilApprovals({ gates, compact = false }) {
 }
 
 function SlaMonitor({ cases }) {
+  const STATE_MACHINE = [
+    { key: "CREATED",              label: "Created",          color: "#5929d0" },
+    { key: "AWAITING_SUBMISSION",  label: "Awaiting Docs",    color: "#0E2E89" },
+    { key: "HOLD_LATE_SUBMISSION", label: "Late Submission",  color: "#E4902E" },
+    { key: "HOLD_HR_APPROVAL",     label: "Pending HIL",      color: "#CF008B" },
+    { key: "REJECTED",             label: "Rejected",         color: "#E11D48" },
+    { key: "CANCELLED",            label: "Cancelled",        color: "#6B7280" },
+    { key: "PROVISIONING",         label: "Provisioning",     color: "#0E766E" },
+    { key: "PAYROLL_SETUP",        label: "Payroll Setup",    color: "#7C3AED" },
+    { key: "WELCOME_SENT",         label: "Welcome Sent",     color: "#16A34A" },
+    { key: "HOLD_HR_SIGNOFF",      label: "Pending Sign-off", color: "#9333EA" },
+    { key: "COMPLETE",             label: "Complete",         color: "#10B981" },
+  ];
+
+  const byStatus = useMemo(() => {
+    const counts = {};
+    for (const c of cases) {
+      const s = c.rawStatus || c.status;
+      if (s) counts[s] = (counts[s] || 0) + 1;
+    }
+    return counts;
+  }, [cases]);
+
+  const byPhase = useMemo(() => ({
+    pre_onboarding:  cases.filter((c) => c.phaseKey === "pre_onboarding").length,
+    onboarding:      cases.filter((c) => c.phaseKey === "onboarding").length,
+    post_onboarding: cases.filter((c) => c.phaseKey === "post_onboarding").length,
+    completed:       cases.filter((c) => c.phaseKey === "completed" || c.isCompleted).length,
+  }), [cases]);
+
+  const total = cases.length || 1;
+
   return (
     <>
-      <div className="kpi-grid g3"><Kpi color="green" label="On Track" value={cases.filter((x) => x.slaLabel === "On Track").length} meta="Within SLA" /><Kpi color="orange" label="At Risk" value={cases.filter((x) => x.st === "at-risk").length} meta="Within breach window" /><Kpi color="red" label="Breached" value={cases.filter((x) => x.st === "blocked").length} meta="Escalation required" /></div>
-      <Board title="SLA Tracking - All Cases" subtitle="Deadline and escalation overview" rows={cases} />
+      <div className="kpi-grid g3" style={{ marginBottom: 12 }}>
+        <Kpi color="green"  label="On Track" value={cases.filter((x) => x.slaLabel === "On Track").length} meta="Within SLA" />
+        <Kpi color="orange" label="At Risk"  value={cases.filter((x) => x.st === "at-risk").length} meta="Within breach window" />
+        <Kpi color="red"    label="Breached" value={cases.filter((x) => x.sla_breach || x.slaBreached).length} meta="Escalation required" />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 12 }}>
+        {[
+          { label: "Pre-Onboarding",  value: byPhase.pre_onboarding,  color: "#0E2E89", meta: "Docs & setup" },
+          { label: "Onboarding",      value: byPhase.onboarding,      color: "#CF008B", meta: "Active phase" },
+          { label: "Post-Onboarding", value: byPhase.post_onboarding, color: "#7C3AED", meta: "Wrap-up tasks" },
+          { label: "Completed",       value: byPhase.completed,       color: "#10B981", meta: "Fully onboarded" },
+        ].map(({ label, value, color, meta }) => (
+          <div key={label} style={{ background: "var(--card-bg)", border: "1px solid var(--n8)", borderRadius: 10, padding: "12px 14px", borderLeft: `3px solid ${color}` }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--n2)", marginTop: 2 }}>{label}</div>
+            <div style={{ fontSize: 10, color: "var(--n5)", marginTop: 2 }}>{meta}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="card-head">
+          <div>
+            <div className="card-title">State Machine Breakdown</div>
+            <div className="card-sub">Live distribution across all 11 workflow states</div>
+          </div>
+          <span className="tag blue">{total} Total</span>
+        </div>
+        <div style={{ padding: "8px 14px 14px" }}>
+          {STATE_MACHINE.map(({ key, label, color }) => {
+            const count = byStatus[key] || 0;
+            const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+            return (
+              <div key={key} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: count > 0 ? "var(--n2)" : "var(--n5)", fontWeight: count > 0 ? 600 : 400, fontSize: 12 }}>{label}</span>
+                    {count > 0 && (
+                      <span style={{ background: color + "22", color, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10 }}>{count}</span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: count > 0 ? 700 : 400, color: count > 0 ? color : "var(--n6)" }}>{pct}%</span>
+                </div>
+                <div style={{ background: "var(--n8)", borderRadius: 4, height: 7, overflow: "hidden" }}>
+                  <div style={{ width: `${pct}%`, background: color, height: "100%", borderRadius: 4, transition: "width 0.5s ease", opacity: count > 0 ? 1 : 0.2 }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <Board title="SLA Tracking — All Cases" subtitle="Deadline and escalation overview" rows={cases} />
     </>
   );
 }

@@ -3,15 +3,31 @@ Versioned BRD API service backed by the PostgreSQL onboarding schema.
 """
 from __future__ import annotations
 
+import csv
+import io
 from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException
+from fastapi.responses import StreamingResponse
 
 from ..config import settings
 from ..database.db import get_db_connection
 from ..database.postgres import APP_SCHEMA, execute, fetch_row, fetch_rows, postgres_enabled
 from .mvp_read_service import MvpReadService
+
+# UTC offsets for welcome-email timezone scheduling (hour at which 08:00 local = UTC)
+_COUNTRY_UTC_OFFSET: dict[str, int] = {
+    "India": -3,           # IST UTC+5:30 → 08:00 local = 02:30 UTC (stored as floor -3 approx)
+    "Germany": -7,         # CET UTC+1 → 08:00 local = 07:00 UTC
+    "Spain": -7,
+    "France": -7,
+    "United Kingdom": -8,  # GMT UTC+0 → 08:00 UTC
+    "United States": 13,   # EST UTC-5 → 08:00 local = 13:00 UTC
+    "China": -8,           # CST UTC+8 → 08:00 local = 00:00 UTC
+    "South Korea": -8,
+    "Japan": -8,
+}
 
 
 class V1Service:
@@ -55,8 +71,44 @@ class V1Service:
     async def cases(self) -> list[dict]:
         if not postgres_enabled():
             return await MvpReadService().cases()
-        rows = await fetch_rows(
+        # Detect which columns are present — migration may not have run yet.
+        oc_cols = await table_columns("onboarding_cases")
+        c_cols  = await table_columns("candidates")
+        has_new_oc = "manager_notification_status" in oc_cols
+        has_new_c  = "country_of_employment" in c_cols
+
+        # Build optional column fragments so the query works before + after migrate_v2.sql
+        oc_new_cols = (
             """
+              COALESCE(oc.manager_notification_status, 'not_sent')           AS manager_notification_status,
+              COALESCE(oc.welcome_email_status, 'not_sent')                  AS welcome_email_status,
+              oc.statutory_form_type,
+              COALESCE(oc.statutory_form_submission_status,'not_applicable')  AS statutory_form_submission_status,
+              COALESCE(oc.tax_statutory_config_status,'not_started')          AS tax_statutory_config_status,
+              COALESCE(oc.hr_signoff_status,'pending')                        AS hr_signoff_status,
+              COALESCE(oc.it_admin_notification_failed, FALSE)                AS it_admin_notification_failed,
+              COALESCE(oc.it_admin_action_item_open, FALSE)                   AS it_admin_action_item_open,
+            """
+            if has_new_oc else
+            """
+              'not_sent'::text      AS manager_notification_status,
+              'not_sent'::text      AS welcome_email_status,
+              NULL::text            AS statutory_form_type,
+              'not_applicable'::text AS statutory_form_submission_status,
+              'not_started'::text   AS tax_statutory_config_status,
+              'pending'::text       AS hr_signoff_status,
+              FALSE                 AS it_admin_notification_failed,
+              FALSE                 AS it_admin_action_item_open,
+            """
+        )
+        c_new_cols = (
+            "c.country_of_employment, c.grade_band,"
+            if has_new_c else
+            "NULL::text AS country_of_employment, NULL::text AS grade_band,"
+        )
+
+        rows = await fetch_rows(
+            f"""
             SELECT
               oc.id AS case_uuid,
               oc.case_number,
@@ -74,6 +126,8 @@ class V1Service:
               oc.payroll_status,
               oc.pf_status,
               oc.sla_breach,
+              oc.sla_escalated_at,
+              {oc_new_cols}
               c.first_name,
               c.last_name,
               c.role,
@@ -81,6 +135,7 @@ class V1Service:
               c.manager_name,
               c.office_location,
               c.joining_date,
+              {c_new_cols}
               doc.rejection_reason,
               doc.correction_instructions,
               hg.decision AS hr_verification_decision,
@@ -165,6 +220,17 @@ class V1Service:
                 "payrollConfirmed": bool(row.get("payroll_confirmed") or False),
                 "pfConfirmed": bool(row.get("pf_confirmed") or False),
                 "welcomeEmailSent": bool(row.get("welcome_email_sent") or False),
+                "welcome_email_status": row.get("welcome_email_status") or "not_sent",
+                "manager_notification_status": row.get("manager_notification_status") or "not_sent",
+                "statutory_form_type": row.get("statutory_form_type"),
+                "statutory_form_submission_status": row.get("statutory_form_submission_status") or "not_applicable",
+                "tax_statutory_config_status": row.get("tax_statutory_config_status") or "not_started",
+                "hr_signoff_status": row.get("hr_signoff_status") or "pending",
+                "it_admin_notification_failed": bool(row.get("it_admin_notification_failed") or False),
+                "it_admin_action_item_open": bool(row.get("it_admin_action_item_open") or False),
+                "countryOfEmployment": row.get("country_of_employment"),
+                "gradeBand": row.get("grade_band"),
+                "sla_escalated_at": _serialise(row.get("sla_escalated_at")),
                 "scenario": self._scenario(status, phase),
                 "slaLabel": "SLA Watch" if status in {"blocked", "at-risk"} else "On Track",
                 "riskScore": self._risk_score(status, progress),
@@ -333,11 +399,20 @@ class V1Service:
         return _serialise_rows(rows)
 
     async def reports(self, report_id: str) -> dict:
+        # Route to specific BRD report methods
+        if report_id in ("r01-pipeline", "r01-overview", "r01"):
+            return await self.report_r01_pipeline()
+        if report_id in ("r03-documents", "r03"):
+            return await self.report_r03_documents()
+        if report_id in ("r04-post-onboarding", "r04"):
+            return await self.report_r04_post_onboarding()
+        if report_id in ("r06-hil-gates", "r06"):
+            return await self.report_r06_hil()
+
+        # Legacy / pass-through reports
         mvp = MvpReadService()
         analytics = mvp.analytics_from_cases(await mvp.cases())
         kpis = await self.kpis()
-        if report_id in ("r01-pipeline", "r01-overview"):
-            return {"report": "r01-pipeline", "kpis": kpis, "by_phase": analytics["byPhase"], "by_status": analytics["byStatus"]}
         if report_id == "r02-documents":
             return {"report": report_id, "document_validation": analytics["byBackgroundVerification"]}
         if report_id == "r03-provisioning":
@@ -471,7 +546,7 @@ class V1Service:
     async def email_templates(self) -> list[dict]:
         rows = await fetch_rows(
             """
-            SELECT id, template_name, version, approved_by, approved_at, is_active, created_at
+            SELECT id, template_name, version, content, approved_by, approved_at, is_active, created_at
             FROM email_templates
             ORDER BY template_name ASC, version DESC
             """
@@ -563,6 +638,383 @@ class V1Service:
                 )
                 escalated += 1
         return {"checked": len(rows), "escalated": escalated, "breached": breached}
+
+    # ── B1: HOLD_LATE_SUBMISSION auto-flag ──────────────────────────
+    async def flag_late_submissions(self) -> dict:
+        """Flag cases as HOLD_LATE_SUBMISSION when joining date has passed and docs not yet submitted."""
+        rows = await fetch_rows(
+            """
+            SELECT oc.id, oc.case_number, oc.employee_id, oc.candidate_id
+            FROM onboarding_cases oc
+            JOIN candidates c ON c.id = oc.candidate_id
+            WHERE c.joining_date <= CURRENT_DATE
+              AND oc.docs_status IN ('not_submitted', 'not_started', 'partial')
+              AND oc.status NOT IN ('HOLD_LATE_SUBMISSION', 'REJECTED', 'CANCELLED', 'COMPLETE',
+                                    'completed', 'blocked')
+            """
+        )
+        flagged = 0
+        for row in rows:
+            await execute(
+                "UPDATE onboarding_cases SET status = 'HOLD_LATE_SUBMISSION', updated_at = NOW() WHERE id = $1",
+                row["id"],
+            )
+            await execute(
+                """
+                INSERT INTO audit_logs (case_id, candidate_id, employee_id, phase, event_type,
+                  rule_ref, rule_version, event_description, outcome, agent_id, created_at)
+                VALUES ($1, $2, $3, 'onboarding', 'hold_late_submission', 'BR001-LATE', 'V6',
+                        $4, 'HOLD_LATE_SUBMISSION', $5, NOW())
+                """,
+                row["id"], row["candidate_id"], row["employee_id"],
+                f"Joining date passed without document submission for {row['case_number']}.",
+                settings.AGENT_ID,
+            )
+            flagged += 1
+        return {"flagged": flagged}
+
+    # ── B2: Manager notification dispatch ───────────────────────────
+    async def dispatch_manager_notifications(self) -> dict:
+        """Send manager notification 15 minutes after joining date (t_plus_0)."""
+        rows = await fetch_rows(
+            """
+            SELECT oc.id, oc.case_number, oc.employee_id, oc.candidate_id
+            FROM onboarding_cases oc
+            JOIN candidates c ON c.id = oc.candidate_id
+            WHERE c.joining_date <= CURRENT_DATE
+              AND oc.manager_notification_status = 'not_sent'
+              AND oc.status NOT IN ('REJECTED', 'CANCELLED', 'COMPLETE', 'completed')
+              AND oc.created_at <= NOW() - INTERVAL '15 minutes'
+            """
+        )
+        dispatched = 0
+        for row in rows:
+            await execute(
+                """
+                UPDATE onboarding_cases
+                SET manager_notification_status = 'sent', updated_at = NOW()
+                WHERE id = $1
+                """,
+                row["id"],
+            )
+            await execute(
+                """
+                INSERT INTO audit_logs (case_id, candidate_id, employee_id, phase, event_type,
+                  rule_ref, rule_version, event_description, outcome, agent_id, created_at)
+                VALUES ($1, $2, $3, 'onboarding', 'manager_notification_sent', 'BR001-MGR', 'V6',
+                        $4, 'sent', $5, NOW())
+                """,
+                row["id"], row["candidate_id"], row["employee_id"],
+                f"Manager notification dispatched for {row['case_number']}.",
+                settings.AGENT_ID,
+            )
+            dispatched += 1
+        return {"dispatched": dispatched}
+
+    # ── B3: Timezone-aware welcome email ────────────────────────────
+    async def send_welcome_emails(self) -> dict:
+        """Send welcome emails at 08:00 local time per country_of_employment."""
+        now_utc = datetime.utcnow()
+        rows = await fetch_rows(
+            """
+            SELECT oc.id, oc.case_number, oc.employee_id, oc.candidate_id,
+                   c.country_of_employment
+            FROM onboarding_cases oc
+            JOIN candidates c ON c.id = oc.candidate_id
+            WHERE oc.welcome_email_status = 'not_sent'
+              AND c.joining_date <= CURRENT_DATE
+              AND oc.status NOT IN ('REJECTED', 'CANCELLED', 'HOLD_LATE_SUBMISSION')
+              AND oc.overall_progress >= 50
+            """
+        )
+        sent = 0
+        for row in rows:
+            country = row.get("country_of_employment") or "India"
+            utc_offset = _COUNTRY_UTC_OFFSET.get(country, -3)
+            # Welcome email window: send if current UTC hour matches 08:00 local ± 1 hour
+            local_hour = (now_utc.hour - utc_offset) % 24
+            if local_hour not in range(7, 10):
+                continue
+            await execute(
+                """
+                UPDATE onboarding_cases
+                SET welcome_email_status = 'sent',
+                    status = CASE WHEN status NOT IN ('COMPLETE', 'completed', 'REJECTED', 'CANCELLED')
+                                  THEN 'WELCOME_SENT' ELSE status END,
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                row["id"],
+            )
+            await execute(
+                """
+                INSERT INTO audit_logs (case_id, candidate_id, employee_id, phase, event_type,
+                  rule_ref, rule_version, event_description, outcome, agent_id, created_at)
+                VALUES ($1, $2, $3, 'onboarding', 'welcome_email_sent', 'BR005-WELCOME', 'V6',
+                        $4, 'sent', $5, NOW())
+                """,
+                row["id"], row["candidate_id"], row["employee_id"],
+                f"Welcome email sent at 08:00 local ({country}) for {row['case_number']}.",
+                settings.AGENT_ID,
+            )
+            sent += 1
+        return {"sent": sent}
+
+    # ── B4: Secondary HIL escalation to Head of HR ──────────────────
+    async def secondary_hil_escalation(self) -> dict:
+        """Escalate to Head of HR 30 min after initial SLA escalation if still pending."""
+        rows = await fetch_rows(
+            """
+            SELECT id, case_number, employee_id, candidate_id, sla_escalated_at
+            FROM onboarding_cases
+            WHERE status IN ('pending_hil', 'HOLD_HR_APPROVAL')
+              AND sla_escalated_at IS NOT NULL
+              AND sla_breach = FALSE
+              AND sla_escalated_at <= NOW() - INTERVAL '30 minutes'
+            """
+        )
+        escalated = 0
+        for row in rows:
+            await execute(
+                "UPDATE onboarding_cases SET sla_breach = TRUE, updated_at = NOW() WHERE id = $1",
+                row["id"],
+            )
+            await execute(
+                """
+                INSERT INTO audit_logs (case_id, candidate_id, employee_id, phase, event_type,
+                  rule_ref, rule_version, event_description, outcome, agent_id, created_at)
+                VALUES ($1, $2, $3, 'onboarding', 'secondary_escalation_head_hr', 'BR002-SEC', 'V6',
+                        $4, 'escalated_head_hr', $5, NOW())
+                """,
+                row["id"], row["candidate_id"], row["employee_id"],
+                f"30-min secondary escalation to Head of HR for {row['case_number']}.",
+                settings.AGENT_ID,
+            )
+            escalated += 1
+        return {"escalated": escalated}
+
+    # ── C1: R03 — Document submission rate ──────────────────────────
+    async def report_r03_documents(self) -> dict:
+        rows = await fetch_rows(
+            """
+            SELECT
+              document_type,
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status IN ('submitted','validated','approved'))::int AS submitted,
+              COUNT(*) FILTER (WHERE status IN ('validated','approved'))::int AS validated,
+              COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected,
+              COUNT(*) FILTER (WHERE status = 'correction_required')::int AS correction_required,
+              ROUND(
+                100.0 * COUNT(*) FILTER (WHERE status IN ('submitted','validated','approved'))
+                / NULLIF(COUNT(*), 0), 1
+              ) AS submission_rate_pct,
+              ROUND(AVG(EXTRACT(EPOCH FROM (submitted_at - created_at)) / 3600) FILTER
+                (WHERE submitted_at IS NOT NULL), 1
+              ) AS avg_hours_to_submit
+            FROM documents
+            GROUP BY document_type
+            ORDER BY total DESC
+            """
+        )
+        totals = await fetch_row(
+            """
+            SELECT
+              COUNT(*)::int AS total_docs,
+              COUNT(*) FILTER (WHERE status IN ('submitted','validated','approved'))::int AS total_submitted,
+              ROUND(
+                100.0 * COUNT(*) FILTER (WHERE status IN ('submitted','validated','approved'))
+                / NULLIF(COUNT(*), 0), 1
+              ) AS overall_submission_rate_pct
+            FROM documents
+            """
+        )
+        return {
+            "report": "r03-documents",
+            "summary": _serialise(dict(totals or {})),
+            "by_document_type": _serialise_rows(rows),
+        }
+
+    # ── C2: R04 — Post-onboarding completion metrics ─────────────────
+    async def report_r04_post_onboarding(self) -> dict:
+        rows = await fetch_rows(
+            """
+            SELECT
+              COUNT(*)::int AS total_cases,
+              COUNT(*) FILTER (WHERE buddy_assigned)::int AS buddy_assigned,
+              COUNT(*) FILTER (WHERE manager_checkin)::int AS manager_checkin,
+              COUNT(*) FILTER (WHERE policy_acknowledged)::int AS policy_acknowledged,
+              COUNT(*) FILTER (WHERE payroll_confirmed)::int AS payroll_confirmed,
+              COUNT(*) FILTER (WHERE pf_confirmed)::int AS pf_confirmed,
+              COUNT(*) FILTER (
+                WHERE buddy_assigned AND manager_checkin AND policy_acknowledged
+                  AND payroll_confirmed AND pf_confirmed
+              )::int AS fully_completed
+            FROM post_onboarding_items
+            """
+        )
+        summary = dict(rows[0]) if rows else {}
+        total = summary.get("total_cases") or 1
+        checklist = [
+            {"item": "Buddy Assigned",       "completed": summary.get("buddy_assigned", 0),       "rate_pct": round(100 * summary.get("buddy_assigned", 0) / total, 1)},
+            {"item": "Manager Check-in",     "completed": summary.get("manager_checkin", 0),      "rate_pct": round(100 * summary.get("manager_checkin", 0) / total, 1)},
+            {"item": "Policy Acknowledged",  "completed": summary.get("policy_acknowledged", 0),  "rate_pct": round(100 * summary.get("policy_acknowledged", 0) / total, 1)},
+            {"item": "Payroll Confirmed",    "completed": summary.get("payroll_confirmed", 0),     "rate_pct": round(100 * summary.get("payroll_confirmed", 0) / total, 1)},
+            {"item": "PF Confirmed",         "completed": summary.get("pf_confirmed", 0),          "rate_pct": round(100 * summary.get("pf_confirmed", 0) / total, 1)},
+        ]
+        return {
+            "report": "r04-post-onboarding",
+            "summary": _serialise(summary),
+            "checklist_completion": checklist,
+        }
+
+    # ── C3: R06 — HIL gate throughput ───────────────────────────────
+    async def report_r06_hil(self) -> dict:
+        rows = await fetch_rows(
+            """
+            SELECT
+              gate_type,
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE decision = 'approved')::int AS approved,
+              COUNT(*) FILTER (WHERE decision = 'rejected')::int AS rejected,
+              COUNT(*) FILTER (WHERE decision = 'pending')::int AS pending,
+              ROUND(AVG(EXTRACT(EPOCH FROM (decided_at - created_at)) / 3600)
+                FILTER (WHERE decided_at IS NOT NULL), 1
+              ) AS avg_resolution_hours,
+              ROUND(
+                100.0 * COUNT(*) FILTER (WHERE decision = 'approved')
+                / NULLIF(COUNT(*) FILTER (WHERE decision <> 'pending'), 0), 1
+              ) AS approval_rate_pct
+            FROM hil_gates
+            GROUP BY gate_type
+            ORDER BY total DESC
+            """
+        )
+        breach_row = await fetch_row(
+            """
+            SELECT
+              COUNT(*)::int AS total_pending,
+              COUNT(*) FILTER (WHERE sla_breach = TRUE)::int AS sla_breached,
+              ROUND(
+                100.0 * COUNT(*) FILTER (WHERE sla_breach = TRUE)
+                / NULLIF(COUNT(*), 0), 1
+              ) AS breach_rate_pct
+            FROM onboarding_cases
+            WHERE status IN ('pending_hil', 'HOLD_HR_APPROVAL')
+            """
+        )
+        return {
+            "report": "r06-hil-gates",
+            "by_gate_type": _serialise_rows(rows),
+            "sla_overview": _serialise(dict(breach_row or {})),
+        }
+
+    # ── C4: R01 enhanced with SLA compliance rate ───────────────────
+    async def report_r01_pipeline(self) -> dict:
+        mvp = MvpReadService()
+        analytics = mvp.analytics_from_cases(await mvp.cases())
+        kpis = await self.kpis()
+        sla_row = await fetch_row(
+            """
+            SELECT
+              COUNT(*)::int AS total_hil_cases,
+              COUNT(*) FILTER (WHERE sla_breach = FALSE AND status IN ('pending_hil','HOLD_HR_APPROVAL'))::int AS within_sla,
+              ROUND(
+                100.0 * COUNT(*) FILTER (WHERE sla_breach = FALSE AND status IN ('pending_hil','HOLD_HR_APPROVAL'))
+                / NULLIF(COUNT(*) FILTER (WHERE status IN ('pending_hil','HOLD_HR_APPROVAL')), 0), 1
+              ) AS sla_compliance_rate_pct
+            FROM onboarding_cases
+            """
+        )
+        risk_timeline = await fetch_rows(
+            """
+            SELECT
+              DATE_TRUNC('day', c.joining_date) AS joining_day,
+              ROUND(AVG(
+                CASE oc.status
+                  WHEN 'COMPLETE' THEN 5 WHEN 'WELCOME_SENT' THEN 10 WHEN 'PAYROLL_SETUP' THEN 20
+                  WHEN 'PROVISIONING' THEN 30 WHEN 'AWAITING_SUBMISSION' THEN 40
+                  WHEN 'HOLD_HR_APPROVAL' THEN 55 WHEN 'HOLD_HR_SIGNOFF' THEN 60
+                  WHEN 'HOLD_LATE_SUBMISSION' THEN 75 WHEN 'REJECTED' THEN 90
+                  WHEN 'at_risk' THEN 78 WHEN 'blocked' THEN 92 ELSE 30
+                END
+              ))::int AS avg_risk_score
+            FROM onboarding_cases oc
+            JOIN candidates c ON c.id = oc.candidate_id
+            WHERE c.joining_date IS NOT NULL
+            GROUP BY DATE_TRUNC('day', c.joining_date)
+            ORDER BY joining_day ASC
+            LIMIT 30
+            """
+        )
+        return {
+            "report": "r01-pipeline",
+            "kpis": kpis,
+            "by_phase": analytics["byPhase"],
+            "by_status": analytics["byStatus"],
+            "sla_compliance": _serialise(dict(sla_row or {})),
+            "risk_timeline": _serialise_rows(risk_timeline),
+        }
+
+    # ── C5: Cases stats — all 11 BRD states ─────────────────────────
+    async def cases_stats(self) -> dict:
+        rows = await fetch_rows(
+            """
+            SELECT status, COUNT(*)::int AS count
+            FROM onboarding_cases
+            GROUP BY status
+            ORDER BY count DESC
+            """
+        )
+        phase_rows = await fetch_rows(
+            """
+            SELECT phase, COUNT(*)::int AS count
+            FROM onboarding_cases
+            GROUP BY phase
+            ORDER BY count DESC
+            """
+        )
+        total_row = await fetch_row("SELECT COUNT(*)::int AS total FROM onboarding_cases")
+        return {
+            "total": (total_row or {}).get("total", 0),
+            "by_status": {row["status"]: row["count"] for row in rows},
+            "by_phase": {row["phase"]: row["count"] for row in phase_rows},
+        }
+
+    # ── C6: CSV export ───────────────────────────────────────────────
+    async def export_report_csv(self, report_id: str) -> StreamingResponse:
+        if report_id in ("r01-pipeline", "r01"):
+            data = await self.report_r01_pipeline()
+            rows_data = [{"metric": k, "value": v} for k, v in (data.get("kpis") or {}).items()]
+            filename = "r01_pipeline_kpis.csv"
+        elif report_id in ("r03-documents", "r03"):
+            data = await self.report_r03_documents()
+            rows_data = data.get("by_document_type") or []
+            filename = "r03_document_submission.csv"
+        elif report_id in ("r04-post-onboarding", "r04"):
+            data = await self.report_r04_post_onboarding()
+            rows_data = data.get("checklist_completion") or []
+            filename = "r04_post_onboarding.csv"
+        elif report_id in ("r06-hil-gates", "r06"):
+            data = await self.report_r06_hil()
+            rows_data = data.get("by_gate_type") or []
+            filename = "r06_hil_gates.csv"
+        else:
+            raise HTTPException(status_code=404, detail=f"Unknown report for CSV export: {report_id}")
+
+        if not rows_data:
+            rows_data = [{"info": "No data available"}]
+
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=list(rows_data[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows_data)
+        output.seek(0)
+
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
 
     async def _check_and_trigger_hil(self, case_id: int) -> None:
         """Transition case to pending_hil automatically when all documents are validated."""
@@ -739,15 +1191,23 @@ class V1Service:
 
     @staticmethod
     def _ui_status(status: str | None, is_completed: bool, sla_breach: bool, hr_decision: str | None) -> str:
-        if is_completed or status == "completed":
+        if is_completed or status in ("completed", "COMPLETE"):
             return "completed"
-        if hr_decision == "pending" or status == "pending_hil":
+        if hr_decision == "pending" or status in ("pending_hil", "HOLD_HR_APPROVAL", "HOLD_HR_SIGNOFF"):
             return "hil"
-        if hr_decision == "rejected" or status == "blocked":
+        if hr_decision == "rejected" or status in ("blocked", "REJECTED", "CANCELLED"):
             return "blocked"
-        if sla_breach or status == "at_risk":
+        if sla_breach or status in ("at_risk", "HOLD_LATE_SUBMISSION"):
             return "at-risk"
-        return {"in_progress": "in-progress", "active": "in-progress"}.get(status or "", status or "in-progress")
+        return {
+            "in_progress": "in-progress",
+            "active": "in-progress",
+            "CREATED": "in-progress",
+            "AWAITING_SUBMISSION": "in-progress",
+            "PROVISIONING": "in-progress",
+            "PAYROLL_SETUP": "in-progress",
+            "WELCOME_SENT": "in-progress",
+        }.get(status or "", status or "in-progress")
 
     @staticmethod
     def _scenario(status: str, phase: str) -> str:

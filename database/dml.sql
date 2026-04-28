@@ -23,31 +23,42 @@ CREATE TEMP TABLE seed_cases (
     role VARCHAR(100),
     department VARCHAR(100),
     phase VARCHAR(50),
-    status VARCHAR(50),
+    status VARCHAR(80),          -- BRD 11-state values
     progress INT,
     it_status VARCHAR(50),
     docs_status VARCHAR(50),
     sla_breach BOOLEAN,
-    hil_decision VARCHAR(50)
+    hil_decision VARCHAR(50),
+    nationality VARCHAR(100),
+    grade_band VARCHAR(20),
+    mgr_notif_status VARCHAR(30),
+    welcome_status VARCHAR(30),
+    statutory_form VARCHAR(50),
+    hr_signoff VARCHAR(30),
+    it_notif_failed BOOLEAN,
+    it_action_open BOOLEAN
 ) ON COMMIT DROP;
 
+-- status column uses BRD 11-state machine values plus legacy compat values
 INSERT INTO seed_cases VALUES
-    (1, 'OB-MVP-1001', 'EMP-MVP-1001', 'Nisha', 'Rao', 'nisha.rao@mvp.aegis.local', 'Product Manager', 'Product', 'pre_onboarding', 'active', 35, 'in_progress', 'not_started', FALSE, NULL),
-    (2, 'OB-MVP-1002', 'EMP-MVP-1002', 'Daniel', 'Kim', 'daniel.kim@mvp.aegis.local', 'Backend Engineer', 'Engineering', 'onboarding', 'pending_hil', 58, 'completed', 'validated', FALSE, 'pending'),
-    (3, 'OB-MVP-1003', 'EMP-MVP-1003', 'Maya', 'Iyer', 'maya.iyer@mvp.aegis.local', 'UX Researcher', 'Design', 'onboarding', 'in_progress', 72, 'completed', 'validated', FALSE, 'approved'),
-    (4, 'OB-MVP-1004', 'EMP-MVP-1004', 'Omar', 'Hassan', 'omar.hassan@mvp.aegis.local', 'Finance Analyst', 'Finance', 'onboarding', 'blocked', 48, 'blocked', 'rejected', FALSE, 'rejected'),
-    (5, 'OB-MVP-1005', 'EMP-MVP-1005', 'Elena', 'Petrova', 'elena.petrova@mvp.aegis.local', 'Compliance Lead', 'Legal', 'post_onboarding', 'at_risk', 82, 'completed', 'validated', TRUE, 'approved'),
-    (6, 'OB-MVP-1006', 'EMP-MVP-1006', 'Karthik', 'Menon', 'karthik.menon@mvp.aegis.local', 'Data Analyst', 'Analytics', 'completed', 'completed', 100, 'completed', 'validated', FALSE, 'approved'),
-    (7, 'OB-MVP-1007', 'EMP-MVP-1007', 'Sofia', 'Garcia', 'sofia.garcia@mvp.aegis.local', 'HR Specialist', 'HR', 'pre_onboarding', 'at_risk', 18, 'not_started', 'not_submitted', TRUE, NULL),
-    (8, 'OB-MVP-1008', 'EMP-MVP-1008', 'Lucas', 'Meyer', 'lucas.meyer@mvp.aegis.local', 'DevOps Engineer', 'Engineering', 'onboarding', 'in_progress', 64, 'failed_retrying', 'correction_required', FALSE, 'approved'),
-    (9, 'OB-MVP-1009', 'EMP-MVP-1009', 'Amina', 'Yusuf', 'amina.yusuf@mvp.aegis.local', 'Payroll Coordinator', 'Finance', 'onboarding', 'blocked', 69, 'completed', 'validated', FALSE, 'approved'),
-    (10, 'OB-MVP-1010', 'EMP-MVP-1010', 'Wei', 'Zhang', 'wei.zhang@mvp.aegis.local', 'IT Support', 'IT', 'post_onboarding', 'in_progress', 91, 'completed', 'validated', FALSE, 'approved'),
-    (11, 'OB-MVP-1011', 'EMP-MVP-1011', 'Fatima', 'Khan', 'fatima.khan@mvp.aegis.local', 'Security Engineer', 'Security', 'onboarding', 'pending_hil', 52, 'completed', 'validated', FALSE, 'pending'),
-    (12, 'OB-MVP-1012', 'EMP-MVP-1012', 'Noah', 'Wilson', 'noah.wilson@mvp.aegis.local', 'Sales Operations', 'Revenue', 'pre_onboarding', 'active', 24, 'in_queue', 'partial', FALSE, NULL);
+    (1,  'OB-MVP-1001', 'EMP-MVP-1001', 'Nisha',   'Rao',     'nisha.rao@mvp.aegis.local',     'Product Manager',    'Product',     'pre_onboarding',  'AWAITING_SUBMISSION',  35, 'in_progress',    'not_started',         FALSE, NULL,      'Indian', 'L3', 'not_sent', 'not_sent', 'Form_12BB', 'pending',    FALSE, FALSE),
+    (2,  'OB-MVP-1002', 'EMP-MVP-1002', 'Daniel',  'Kim',     'daniel.kim@mvp.aegis.local',     'Backend Engineer',   'Engineering', 'onboarding',      'HOLD_HR_APPROVAL',     58, 'completed',      'validated',           FALSE, 'pending', 'Korean', 'L2', 'sent',     'not_sent', 'W8-BEN',    'pending',    FALSE, FALSE),
+    (3,  'OB-MVP-1003', 'EMP-MVP-1003', 'Maya',    'Iyer',    'maya.iyer@mvp.aegis.local',      'UX Researcher',      'Design',      'onboarding',      'PROVISIONING',         72, 'completed',      'validated',           FALSE, 'approved','Indian', 'L2', 'sent',     'not_sent', 'Form_12BB', 'pending',    FALSE, FALSE),
+    (4,  'OB-MVP-1004', 'EMP-MVP-1004', 'Omar',    'Hassan',  'omar.hassan@mvp.aegis.local',    'Finance Analyst',    'Finance',     'onboarding',      'REJECTED',             48, 'blocked',        'rejected',            FALSE, 'rejected','Egyptian','L2','not_sent', 'not_sent', 'W8-BEN',    'pending',    FALSE, FALSE),
+    (5,  'OB-MVP-1005', 'EMP-MVP-1005', 'Elena',   'Petrova', 'elena.petrova@mvp.aegis.local',  'Compliance Lead',    'Legal',       'post_onboarding', 'HOLD_HR_SIGNOFF',      82, 'completed',      'validated',           TRUE,  'approved','Russian','L4', 'sent',     'sent',     'W8-BEN',    'pending',    FALSE, FALSE),
+    (6,  'OB-MVP-1006', 'EMP-MVP-1006', 'Karthik', 'Menon',   'karthik.menon@mvp.aegis.local',  'Data Analyst',       'Analytics',   'completed',       'COMPLETE',             100,'completed',      'validated',           FALSE, 'approved','Indian', 'L2', 'sent',     'sent',     'Form_12BB', 'signed_off', FALSE, FALSE),
+    (7,  'OB-MVP-1007', 'EMP-MVP-1007', 'Sofia',   'Garcia',  'sofia.garcia@mvp.aegis.local',   'HR Specialist',      'HR',          'pre_onboarding',  'HOLD_LATE_SUBMISSION', 18, 'not_started',    'not_submitted',       TRUE,  NULL,      'Spanish','L2', 'not_sent', 'not_sent', 'W8-BEN',    'pending',    FALSE, FALSE),
+    (8,  'OB-MVP-1008', 'EMP-MVP-1008', 'Lucas',   'Meyer',   'lucas.meyer@mvp.aegis.local',    'DevOps Engineer',    'Engineering', 'onboarding',      'PROVISIONING',         64, 'failed_retrying','correction_required', FALSE, 'approved','German', 'L2', 'sent',     'not_sent', 'W8-BEN',    'pending',    TRUE,  TRUE ),
+    (9,  'OB-MVP-1009', 'EMP-MVP-1009', 'Amina',   'Yusuf',   'amina.yusuf@mvp.aegis.local',    'Payroll Coordinator','Finance',     'onboarding',      'PAYROLL_SETUP',        69, 'completed',      'validated',           FALSE, 'approved','Somali', 'L2', 'sent',     'not_sent', 'W8-BEN',    'pending',    FALSE, FALSE),
+    (10, 'OB-MVP-1010', 'EMP-MVP-1010', 'Wei',     'Zhang',   'wei.zhang@mvp.aegis.local',      'IT Support',         'IT',          'post_onboarding', 'WELCOME_SENT',         91, 'completed',      'validated',           FALSE, 'approved','Chinese','L2', 'sent',     'sent',     'W8-BEN',    'pending',    FALSE, FALSE),
+    (11, 'OB-MVP-1011', 'EMP-MVP-1011', 'Fatima',  'Khan',    'fatima.khan@mvp.aegis.local',    'Security Engineer',  'Security',    'onboarding',      'HOLD_HR_APPROVAL',     52, 'completed',      'validated',           FALSE, 'pending', 'Pakistani','L2','sent',    'not_sent', 'W8-BEN',    'pending',    FALSE, FALSE),
+    (12, 'OB-MVP-1012', 'EMP-MVP-1012', 'Noah',    'Wilson',  'noah.wilson@mvp.aegis.local',    'Sales Operations',   'Revenue',     'pre_onboarding',  'CREATED',              24, 'in_queue',       'partial',             FALSE, NULL,      'American','L1','not_sent', 'not_sent', 'W9',        'pending',    FALSE, FALSE);
 
 INSERT INTO candidates (
     first_name, last_name, personal_email, phone, role, department,
     manager_name, joining_date, employee_type, office_location, nationality,
+    date_of_birth, grade_band, country_of_employment, european_country_of_employment,
+    permanent_address, emergency_contact,
     created_at, updated_at
 )
 SELECT
@@ -65,17 +76,43 @@ SELECT
         WHEN department IN ('Finance', 'Legal') THEN 'Mumbai Office'
         ELSE 'Bengaluru HQ'
     END,
-    'Indian',
+    sc.nationality,
+    (DATE '1990-01-01' + (idx * 365 + idx * 17) * INTERVAL '1 day')::DATE,
+    sc.grade_band,
+    CASE
+        WHEN sc.nationality = 'Indian'  THEN 'India'
+        WHEN sc.nationality = 'German'  THEN 'Germany'
+        WHEN sc.nationality = 'Spanish' THEN 'Spain'
+        WHEN sc.nationality = 'Korean'  THEN 'South Korea'
+        WHEN sc.nationality = 'Russian' THEN 'Russia'
+        WHEN sc.nationality = 'Chinese' THEN 'China'
+        WHEN sc.nationality = 'Somali'  THEN 'Somalia'
+        WHEN sc.nationality = 'Egyptian' THEN 'Egypt'
+        WHEN sc.nationality = 'Pakistani' THEN 'Pakistan'
+        ELSE 'United States'
+    END,
+    sc.nationality IN ('German', 'French', 'Italian', 'Spanish', 'Dutch', 'Belgian'),
+    CASE
+        WHEN department IN ('Engineering', 'IT', 'Security') THEN 'Plot 12, Hitech City, Hyderabad 500081'
+        WHEN department IN ('Finance', 'Legal') THEN '4th Floor, BKC Complex, Mumbai 400051'
+        ELSE '14, MG Road, Bengaluru 560001'
+    END,
+    jsonb_build_object('name', 'Emergency Contact ' || idx, 'phone', '+91-9000' || idx, 'relation', 'Spouse'),
     NOW() - (idx || ' days')::interval,
     NOW()
-FROM seed_cases
-ORDER BY idx;
+FROM seed_cases sc
+ORDER BY sc.idx;
 
 INSERT INTO onboarding_cases (
     case_number, candidate_id, employee_id, phase, status,
     pre_onboarding_progress, onboarding_progress, post_onboarding_progress,
     overall_progress, it_status, docs_status, payroll_status, pf_status,
-    is_completed, completed_at, sla_breach, created_at, updated_at
+    is_completed, completed_at, sla_breach,
+    manager_notification_status, welcome_email_status,
+    statutory_form_type, statutory_form_submission_status,
+    tax_statutory_config_status, hr_signoff_status,
+    it_admin_notification_failed, it_admin_action_item_open,
+    created_at, updated_at
 )
 SELECT
     sc.case_number,
@@ -91,9 +128,17 @@ SELECT
     sc.docs_status,
     CASE WHEN sc.case_number = 'OB-MVP-1009' THEN 'failed' WHEN sc.progress > 70 THEN 'completed' ELSE 'not_started' END,
     CASE WHEN sc.case_number = 'OB-MVP-1005' THEN 'overdue' WHEN sc.progress = 100 THEN 'completed' ELSE 'not_started' END,
-    sc.status = 'completed',
-    CASE WHEN sc.status = 'completed' THEN NOW() - INTERVAL '1 day' ELSE NULL END,
+    sc.status = 'COMPLETE',
+    CASE WHEN sc.status = 'COMPLETE' THEN NOW() - INTERVAL '1 day' ELSE NULL END,
     sc.sla_breach,
+    sc.mgr_notif_status,
+    sc.welcome_status,
+    sc.statutory_form,
+    CASE WHEN sc.progress >= 80 THEN 'submitted' ELSE 'not_submitted' END,
+    CASE WHEN sc.it_status = 'completed' THEN 'configured' ELSE 'not_started' END,
+    sc.hr_signoff,
+    sc.it_notif_failed,
+    sc.it_action_open,
     NOW() - (sc.idx || ' days')::interval,
     NOW()
 FROM seed_cases sc
@@ -308,10 +353,35 @@ INSERT INTO role_profiles (
     role_name, display_name, initials, color, sort_order, is_active, created_at, updated_at
 )
 VALUES
-    ('HR Coordinator', 'Jagadeeswar R', 'JR', '#5929d0', 1, TRUE, NOW(), NOW()),
-    ('HR Ops Manager', 'Nandita Mehta', 'NM', '#CF008B', 2, TRUE, NOW(), NOW()),
-    ('Onboarding Employee', 'Amina Yusuf', 'AY', '#0E2E89', 3, TRUE, NOW(), NOW()),
-    ('IT Support', 'Kiran Patel', 'KP', '#E4902E', 4, TRUE, NOW(), NOW()),
-    ('Admin Team', 'Asha Rao', 'AR', '#16A34A', 5, TRUE, NOW(), NOW());
+    ('HR Coordinator',      'Jagadeeswar R',  'JR', '#5929d0', 1, TRUE, NOW(), NOW()),
+    ('HR Ops Manager',      'Nandita Mehta',  'NM', '#CF008B', 2, TRUE, NOW(), NOW()),
+    ('Onboarding Employee', 'Amina Yusuf',    'AY', '#0E2E89', 3, TRUE, NOW(), NOW()),
+    ('IT Support',          'Kiran Patel',    'KP', '#E4902E', 4, TRUE, NOW(), NOW()),
+    ('Admin Team',          'Asha Rao',       'AR', '#16A34A', 5, TRUE, NOW(), NOW()),
+    ('Compliance Reviewer', 'Riya Sharma',    'RS', '#0E766E', 6, TRUE, NOW(), NOW()),
+    ('HR Platform Engineer','Arjun Dev',      'AD', '#7C3AED', 7, TRUE, NOW(), NOW());
 
 DROP TABLE IF EXISTS seed_cases;
+
+-- ── Email templates (idempotent — email_templates is NOT truncated above) ──
+INSERT INTO email_templates (template_name, version, content, approved_by, approved_at, is_active)
+VALUES
+    ('t_minus_7', 'v1.0',
+     'Dear {{first_name}}, your joining date at Centific is in 7 days on {{joining_date}}. Please complete your onboarding documents (identity proof, address proof, employment agreement) before your start date. Contact your HR Coordinator if you have questions.',
+     'Jagadeeswar R', NOW(), TRUE),
+    ('t_minus_3', 'v1.0',
+     'Dear {{first_name}}, only 3 days until you join us on {{joining_date}}! This is a reminder to ensure all onboarding documents are submitted and validated. Your IT setup request has been raised. See you soon!',
+     'Nandita Mehta', NOW(), TRUE),
+    ('t_plus_0', 'v1.0',
+     'Dear {{first_name}}, welcome to your first day at Centific! Your HR Coordinator {{hr_coordinator}} will meet you at reception. Your laptop and email account are ready. We look forward to having you on board!',
+     'Jagadeeswar R', NOW(), TRUE),
+    ('manager_notification', 'v1.0',
+     'Dear {{manager_name}}, we would like to inform you that {{first_name}} {{last_name}} will be joining your team as {{role}} on {{joining_date}}. Please ensure their desk, access card, and system access are ready. Their HR case reference is {{case_number}}.',
+     'Nandita Mehta', NOW(), TRUE),
+    ('welcome_pack', 'v1.0',
+     'Dear {{first_name}}, attached is your onboarding welcome pack. It contains your joining instructions, company policies, and a checklist of items to complete in your first week. Your buddy {{buddy_name}} will reach out to schedule a welcome call.',
+     'Nandita Mehta', NOW(), TRUE),
+    ('sla_escalation', 'v1.0',
+     'This is an automated escalation notice. Case {{case_number}} for employee {{first_name}} {{last_name}} has reached 75%% of the 4-business-hour HIL SLA window. Immediate review is required to avoid a breach.',
+     'System', NOW(), TRUE)
+ON CONFLICT (template_name, version) DO NOTHING;

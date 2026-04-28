@@ -24,9 +24,15 @@ CREATE TABLE IF NOT EXISTS candidates (
     joining_date     DATE,
     employee_type    VARCHAR(100),
     office_location  VARCHAR(150),
-    nationality      VARCHAR(100),
-    created_at       TIMESTAMPTZ   DEFAULT NOW(),
-    updated_at       TIMESTAMPTZ   DEFAULT NOW()
+    nationality                        VARCHAR(100),
+    date_of_birth                      DATE,
+    grade_band                         VARCHAR(50),
+    country_of_employment              VARCHAR(100),
+    european_country_of_employment     BOOLEAN      DEFAULT FALSE,
+    permanent_address                  TEXT,
+    emergency_contact                  JSONB,
+    created_at                         TIMESTAMPTZ  DEFAULT NOW(),
+    updated_at                         TIMESTAMPTZ  DEFAULT NOW()
 );
 
 -- ───────────────────────────────────────────────────────────────────
@@ -51,11 +57,25 @@ CREATE TABLE IF NOT EXISTS onboarding_cases (
     is_completed                BOOLEAN      DEFAULT FALSE,
     completed_at                TIMESTAMPTZ,
     sla_breach                  BOOLEAN      DEFAULT FALSE,
-    sla_pending_hil_started_at  TIMESTAMPTZ,  -- BR002: 4-business-hour HIL SLA clock start
-    sla_escalated_at            TIMESTAMPTZ,  -- BR002: set at 75% SLA threshold
-    created_at                  TIMESTAMPTZ  DEFAULT NOW(),
-    updated_at                  TIMESTAMPTZ  DEFAULT NOW()
+    sla_pending_hil_started_at      TIMESTAMPTZ,
+    sla_escalated_at                TIMESTAMPTZ,
+    -- BRD state-machine fields
+    manager_notification_status     VARCHAR(80)  DEFAULT 'not_sent',
+    welcome_email_status            VARCHAR(80)  DEFAULT 'not_sent',
+    statutory_form_type             VARCHAR(120),
+    statutory_form_submission_status VARCHAR(80) DEFAULT 'not_applicable',
+    tax_statutory_config_status     VARCHAR(80)  DEFAULT 'not_started',
+    hr_signoff_status               VARCHAR(80)  DEFAULT 'pending',
+    it_admin_notification_failed    BOOLEAN      DEFAULT FALSE,
+    it_admin_action_item_open       BOOLEAN      DEFAULT FALSE,
+    created_at                      TIMESTAMPTZ  DEFAULT NOW(),
+    updated_at                      TIMESTAMPTZ  DEFAULT NOW()
 );
+
+-- BRD comment: status values align to 11-state machine:
+-- CREATED | AWAITING_SUBMISSION | HOLD_LATE_SUBMISSION | HOLD_HR_APPROVAL | REJECTED
+-- CANCELLED | PROVISIONING | PAYROLL_SETUP | WELCOME_SENT | HOLD_HR_SIGNOFF | COMPLETE
+-- Legacy values (active|in_progress|pending_hil|at_risk|blocked|completed) also accepted.
 
 -- ───────────────────────────────────────────────────────────────────
 -- pre_onboarding_tasks
