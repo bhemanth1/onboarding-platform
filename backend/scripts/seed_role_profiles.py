@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
+from app.database.postgres import APP_SCHEMA
+
 PROFILES = [
     ("HR Coordinator", "Jagadeeswar R", "JR", "#5929d0", 1),
     ("HR Ops Manager", "Nandita Mehta", "NM", "#CF008B", 2),
@@ -51,6 +53,8 @@ async def seed_postgres(dsn: str) -> None:
     clean_dsn, ssl_required = asyncpg_dsn(dsn)
     conn = await asyncpg.connect(clean_dsn, ssl=ssl_context(ssl_required))
     try:
+        await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{APP_SCHEMA}"')
+        await conn.execute(f'SET search_path TO "{APP_SCHEMA}", public')
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS role_profiles (

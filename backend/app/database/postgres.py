@@ -85,7 +85,7 @@ async def init_pool() -> None:
         max_size=5,
         command_timeout=30,
         server_settings={
-            "search_path": APP_SCHEMA,  # every connection defaults to dana schema
+            "search_path": f"{APP_SCHEMA}, public",  # app tables in dana; extensions/functions in public
         },
     )
 
@@ -111,7 +111,7 @@ async def _run(method: str, query: str, *args):
     conn = await asyncpg.connect(
         dsn,
         ssl=ssl_ctx,
-        server_settings={"search_path": APP_SCHEMA},
+        server_settings={"search_path": f"{APP_SCHEMA}, public"},
     )
     try:
         return await getattr(conn, method)(query, *args)

@@ -1,14 +1,12 @@
--- Create schema
 CREATE SCHEMA IF NOT EXISTS dana;
 
 SET search_path TO dana;
 
--- Candidates
 CREATE TABLE IF NOT EXISTS candidates (
     id SERIAL PRIMARY KEY,
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    personal_email VARCHAR(255) UNIQUE,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    personal_email VARCHAR(255) UNIQUE NOT NULL,
     phone VARCHAR(20),
     role VARCHAR(100),
     department VARCHAR(100),
@@ -21,18 +19,17 @@ CREATE TABLE IF NOT EXISTS candidates (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- Onboarding Cases
 CREATE TABLE IF NOT EXISTS onboarding_cases (
     id SERIAL PRIMARY KEY,
-    case_number VARCHAR(50) UNIQUE,
+    case_number VARCHAR(50) UNIQUE NOT NULL,
     candidate_id INT REFERENCES candidates(id) ON DELETE CASCADE,
     employee_id VARCHAR(50),
     phase VARCHAR(50),
     status VARCHAR(50),
-    pre_onboarding_progress INT,
-    onboarding_progress INT,
-    post_onboarding_progress INT,
-    overall_progress INT,
+    pre_onboarding_progress INT DEFAULT 0,
+    onboarding_progress INT DEFAULT 0,
+    post_onboarding_progress INT DEFAULT 0,
+    overall_progress INT DEFAULT 0,
     it_status VARCHAR(50),
     docs_status VARCHAR(50),
     payroll_status VARCHAR(50),
@@ -44,7 +41,6 @@ CREATE TABLE IF NOT EXISTS onboarding_cases (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- Pre-onboarding Tasks
 CREATE TABLE IF NOT EXISTS pre_onboarding_tasks (
     id SERIAL PRIMARY KEY,
     case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
@@ -53,11 +49,10 @@ CREATE TABLE IF NOT EXISTS pre_onboarding_tasks (
     description TEXT,
     due_date DATE,
     status VARCHAR(50),
-    sla_compliant BOOLEAN,
+    sla_compliant BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Follow Ups
 CREATE TABLE IF NOT EXISTS follow_ups (
     id SERIAL PRIMARY KEY,
     case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
@@ -71,7 +66,6 @@ CREATE TABLE IF NOT EXISTS follow_ups (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- HIL Gates
 CREATE TABLE IF NOT EXISTS hil_gates (
     id SERIAL PRIMARY KEY,
     case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
@@ -79,7 +73,7 @@ CREATE TABLE IF NOT EXISTS hil_gates (
     decision VARCHAR(50),
     decided_at TIMESTAMP,
     decision_notes TEXT,
-    is_blocking BOOLEAN,
+    is_blocking BOOLEAN DEFAULT FALSE,
     flag_description TEXT,
     approval_token VARCHAR(255),
     token_expires_at TIMESTAMP,
@@ -89,10 +83,6 @@ CREATE TABLE IF NOT EXISTS hil_gates (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-ALTER TABLE IF EXISTS hil_gates
-    ADD COLUMN IF NOT EXISTS decision_notes TEXT;
-
--- Documents
 CREATE TABLE IF NOT EXISTS documents (
     id SERIAL PRIMARY KEY,
     case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
@@ -113,6 +103,61 @@ CREATE TABLE IF NOT EXISTS documents (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS provisioning_items (
+    id SERIAL PRIMARY KEY,
+    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    item_type VARCHAR(100),
+    assigned_team VARCHAR(50),
+    description TEXT,
+    status VARCHAR(50),
+    requested_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS post_onboarding_items (
+    id SERIAL PRIMARY KEY,
+    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    payroll_completed BOOLEAN DEFAULT FALSE,
+    pf_completed BOOLEAN DEFAULT FALSE,
+    buddy_assigned BOOLEAN DEFAULT FALSE,
+    feedback_collected BOOLEAN DEFAULT FALSE,
+    docs_archived BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id SERIAL PRIMARY KEY,
+    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    candidate_id INT REFERENCES candidates(id) ON DELETE SET NULL,
+    employee_id VARCHAR(50),
+    phase VARCHAR(50),
+    event_type VARCHAR(50),
+    rule_ref VARCHAR(100),
+    rule_version VARCHAR(20),
+    event_description TEXT,
+    outcome VARCHAR(50),
+    agent_id VARCHAR(50),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS role_profiles (
+    role_name VARCHAR(100) PRIMARY KEY,
+    display_name VARCHAR(150) NOT NULL,
+    initials VARCHAR(10),
+    color VARCHAR(20),
+    sort_order INT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS hil_gates
+    ADD COLUMN IF NOT EXISTS decision_notes TEXT;
+
 ALTER TABLE IF EXISTS documents
     ADD COLUMN IF NOT EXISTS case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
     ADD COLUMN IF NOT EXISTS candidate_id INT REFERENCES candidates(id) ON DELETE SET NULL,
@@ -131,21 +176,6 @@ ALTER TABLE IF EXISTS documents
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
 
--- Provisioning Items
-CREATE TABLE IF NOT EXISTS provisioning_items (
-    id SERIAL PRIMARY KEY,
-    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
-    item_type VARCHAR(100),
-    assigned_team VARCHAR(50),
-    description TEXT,
-    status VARCHAR(50),
-    requested_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
 ALTER TABLE IF EXISTS provisioning_items
     ADD COLUMN IF NOT EXISTS case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
     ADD COLUMN IF NOT EXISTS item_type VARCHAR(100),
@@ -158,19 +188,6 @@ ALTER TABLE IF EXISTS provisioning_items
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
 
--- Post-onboarding Items
-CREATE TABLE IF NOT EXISTS post_onboarding_items (
-    id SERIAL PRIMARY KEY,
-    case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
-    payroll_completed BOOLEAN DEFAULT FALSE,
-    pf_completed BOOLEAN DEFAULT FALSE,
-    buddy_assigned BOOLEAN DEFAULT FALSE,
-    feedback_collected BOOLEAN DEFAULT FALSE,
-    docs_archived BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
 ALTER TABLE IF EXISTS post_onboarding_items
     ADD COLUMN IF NOT EXISTS case_id INT REFERENCES onboarding_cases(id) ON DELETE CASCADE,
     ADD COLUMN IF NOT EXISTS payroll_completed BOOLEAN DEFAULT FALSE,
@@ -180,34 +197,6 @@ ALTER TABLE IF EXISTS post_onboarding_items
     ADD COLUMN IF NOT EXISTS docs_archived BOOLEAN DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
-
--- Audit Logs (append-only)
-CREATE TABLE IF NOT EXISTS audit_logs (
-    id SERIAL PRIMARY KEY,
-    case_id INT,
-    candidate_id INT,
-    employee_id VARCHAR(50),
-    phase VARCHAR(50),
-    event_type VARCHAR(50),
-    rule_ref VARCHAR(100),
-    rule_version VARCHAR(20),
-    event_description TEXT,
-    outcome VARCHAR(50),
-    agent_id VARCHAR(50),
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Role Profiles
-CREATE TABLE IF NOT EXISTS role_profiles (
-    role_name VARCHAR(100) PRIMARY KEY,
-    display_name VARCHAR(150) NOT NULL,
-    initials VARCHAR(10),
-    color VARCHAR(20),
-    sort_order INT,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
 
 CREATE INDEX IF NOT EXISTS idx_onboarding_cases_candidate_id ON onboarding_cases(candidate_id);
 CREATE INDEX IF NOT EXISTS idx_documents_case_id ON documents(case_id);

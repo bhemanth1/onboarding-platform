@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from ..config import settings
 from ..database.db import get_db_connection
-from ..database.postgres import execute, fetch_row, fetch_rows, postgres_enabled
+from ..database.postgres import APP_SCHEMA, execute, fetch_row, fetch_rows, postgres_enabled
 from .mvp_read_service import MvpReadService
 
 
@@ -592,8 +592,9 @@ async def table_columns(table: str) -> set[str]:
         """
         SELECT column_name
         FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = $1
+        WHERE table_schema = $1 AND table_name = $2
         """,
+        APP_SCHEMA,
         table,
     )
     return {row["column_name"] for row in rows}

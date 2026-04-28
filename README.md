@@ -131,3 +131,18 @@ Health:      http://localhost:5001/dana-aegis/health
 API Docs:    http://localhost:5001/docs
 Sample API:  http://localhost:5001/dana-aegis/api/v1/cases
 ```
+
+## PostgreSQL Schema And Seed Data
+
+If the backend logs errors like `relation "onboarding_cases" does not exist`,
+create and seed the PostgreSQL schema from the backend folder:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\seed_postgres_all.py
+```
+
+To create only the schema and tables without demo rows:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\seed_postgres_all.py --schema-only
+```
