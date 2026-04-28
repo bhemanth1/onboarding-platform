@@ -143,13 +143,14 @@ function normaliseMetrics(kpis = {}, cases = []) {
 }
 
 async function dashboard() {
-  const [kpis, rawCases, audit, hil, profiles, followUps] = await Promise.all([
+  const [kpis, rawCases, audit, hil, profiles, followUps, preOnboardingTasks] = await Promise.all([
     get("/api/v1/dashboard/kpis"),
     get("/api/v1/cases"),
     get("/api/v1/audit/live?limit=100"),
     get("/api/v1/hil"),
     get("/api/v1/profiles"),
-    get("/api/v1/pre-onboarding/follow-ups")
+    get("/api/v1/pre-onboarding/follow-ups"),
+    get("/api/v1/pre-onboarding/tasks")
   ]);
   const cases = normalizeCases(rawCases);
   const analytics = analyticsFromCases(cases);
@@ -163,6 +164,7 @@ async function dashboard() {
     analytics,
     profiles,
     followUps,
+    preOnboardingTasks,
     hil_gates: hil,
     workflow: { newJoiner: [], hrCoordinator: [] }
   };
@@ -174,6 +176,7 @@ export const api = {
   profiles: () => get("/api/v1/profiles"),
   caseDetail: async (caseRef) => normalizeCase(await get(`/api/v1/cases/${encodeURIComponent(caseRef)}`)),
   followUps: () => get("/api/v1/pre-onboarding/follow-ups"),
+  preOnboardingTasks: () => get("/api/v1/pre-onboarding/tasks"),
   analytics: async () => analyticsFromCases(normalizeCases(await get("/api/v1/cases"))),
   audit: () => get("/api/v1/audit/live?limit=100"),
   hil: () => get("/api/v1/hil"),

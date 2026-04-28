@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5000",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 5000"
+    "preview": "vite preview --host 0.0.0.0 --port 5000",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
@@ -14,5 +16,10 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "jsdom": "^25.0.1",
+    "vitest": "^2.1.9"
+  }
 }

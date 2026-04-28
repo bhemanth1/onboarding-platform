@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
+import HRDashboard from "./components/HRDashboard.jsx";
+import CasesTable from "./components/CasesTable.jsx";
+import ExceptionQueue from "./components/ExceptionQueue.jsx";
+import PreOnboardPanel from "./components/PreOnboardPanel.jsx";
+import PostOnboardPanel from "./components/PostOnboardPanel.jsx";
+import AuditPanel from "./components/AuditPanel.jsx";
+import ReportsPage from "./components/ReportsPage.jsx";
+import EmployeeView from "./components/EmployeeView.jsx";
+import ITSupportView from "./components/ITSupportView.jsx";
+import AdminView from "./components/AdminView.jsx";
 
 const ROLE_CONFIG = {
   "HR Coordinator": {
@@ -126,6 +136,7 @@ const PAGE_META = {
   overview: ["HR Coordinator - Dashboard", "Pipeline health · Active cases · Lifecycle overview"],
   cases: ["All Active Cases", "Full lifecycle view · employees"],
   preonboard: ["Pre-Onboarding Panel", "IT provisioning · Admin prep · Candidate follow-ups"],
+  "portal-public": ["Employee Status Portal", "Secure direct-link case view"],
   exceptions: ["Exception & HIL Queue", "Requires human-in-loop review"],
   post: ["Post-Onboarding", "Joining formalities · PF · Buddy assignment"],
   audit: ["Audit Log", "Append-only · All lifecycle events"],
@@ -196,13 +207,20 @@ const ICON_MAP = {
 const statusLabels = {
   completed: "Completed",
   "in-progress": "In Progress",
+  in_progress: "In Progress",
+  pending: "Pending",
+  not_started: "Not Started",
+  submitted: "Submitted",
+  validated: "Validated",
+  rejected: "Rejected",
+  sent: "Sent",
   "at-risk": "At Risk",
   blocked: "Blocked",
   hil: "Pending HIL"
 };
 
 function badge(status) {
-  return <span className={`badge ${status}`}>{statusLabels[status] || status}</span>;
+  return <span className={`badge ${status}`}>{statusLabels[status] || formatStatusLabel(status)}</span>;
 }
 
 function formatDateTime(value) {
@@ -218,6 +236,67 @@ function formatReminderType(value = "") {
     .replace("t_plus_", "T+")
     .replace(/_/g, " ")
     .toUpperCase();
+}
+
+function formatTaskType(value = "") {
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatStatusLabel(value = "") {
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatHoursLeft(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "Unknown";
+  if (numeric <= 0) return "0h left";
+  if (numeric < 1) return `${Math.max(1, Math.round(numeric * 60))}m left`;
+  return `${numeric.toFixed(numeric >= 10 ? 0 : 1)}h left`;
+}
+
+function hoursBetween(from, to) {
+  if (!(from instanceof Date) || !(to instanceof Date)) return null;
+  const diff = (to.getTime() - from.getTime()) / 36e5;
+  if (!Number.isFinite(diff)) return null;
+  return diff;
+}
+
+function sumFollowUpStatuses(items = []) {
+  return items.reduce((acc, item) => {
+    const key = item.sent_at ? "sent" : (item.response_status || "pending").toLowerCase();
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function groupByCase(rows = []) {
+  return rows.reduce((acc, item) => {
+    const key = item.case_number || item.employee_id || "Unknown case";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+}
+
+function locationStateFromPath(pathname) {
+  const fallback = { page: ROLE_CONFIG["HR Coordinator"].defaultPage, role: "HR Coordinator", portalToken: "" };
+  if (typeof window === "undefined") return fallback;
+  const normalized = pathname.replace(/\/+$/, "") || "/";
+  if (!normalized.startsWith(ROUTE_BASE)) return fallback;
+  const route = normalized.slice(ROUTE_BASE.length) || "/hr/dashboard";
+  if (route.startsWith("/portal/")) {
+    return {
+      page: "portal-public",
+      role: "Onboarding Employee",
+      portalToken: decodeURIComponent(route.slice("/portal/".length))
+    };
+  }
+  const routeState = ROUTE_TO_STATE[route] || LEGACY_ROUTE_TO_STATE[route] || fallback;
+  return { ...routeState, portalToken: "" };
 }
 
 function PageIcon({ page }) {
@@ -248,12 +327,7 @@ function getDefaultWidgetPositions() {
 }
 
 function routeStateFromLocation() {
-  const fallback = { page: ROLE_CONFIG["HR Coordinator"].defaultPage, role: "HR Coordinator" };
-  if (typeof window === "undefined") return fallback;
-  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
-  if (!pathname.startsWith(ROUTE_BASE)) return fallback;
-  const route = pathname.slice(ROUTE_BASE.length) || "/hr/dashboard";
-  return ROUTE_TO_STATE[route] || LEGACY_ROUTE_TO_STATE[route] || fallback;
+  return locationStateFromPath(typeof window === "undefined" ? "/" : window.location.pathname);
 }
 
 function pageFromLocation() {
@@ -262,6 +336,10 @@ function pageFromLocation() {
 
 function roleFromLocation() {
   return routeStateFromLocation().role;
+}
+
+function portalTokenFromLocation() {
+  return routeStateFromLocation().portalToken || "";
 }
 
 function isDesktopLocation() {
@@ -275,6 +353,10 @@ function initialWindowMode() {
 }
 
 function routeForPage(page, roleName = roleForPage(page)) {
+  if (page === "portal-public") {
+    const token = portalTokenFromLocation();
+    return `${ROUTE_BASE}/portal/${encodeURIComponent(token || "token")}`;
+  }
   const roleRoutes = ROLE_PAGE_ROUTES[roleName] || {};
   const route = roleRoutes[page] || PAGE_TO_ROUTE[page] || PAGE_TO_ROUTE.overview;
   return `${ROUTE_BASE}${route}`;
@@ -286,9 +368,11 @@ function roleForPage(page) {
   )?.[0] || "HR Coordinator";
 }
 
-function syncRoute(page, roleName, replace = false) {
+function syncRoute(page, roleName, replace = false, portalToken = "") {
   if (typeof window === "undefined") return;
-  const nextPath = routeForPage(page, roleName);
+  const nextPath = page === "portal-public"
+    ? `${ROUTE_BASE}/portal/${encodeURIComponent(portalToken || portalTokenFromLocation() || "token")}`
+    : routeForPage(page, roleName);
   if (window.location.pathname === nextPath) return;
   const method = replace ? "replaceState" : "pushState";
   window.history[method]({ page, role: roleName }, "", `${nextPath}${window.location.search}`);
@@ -302,8 +386,10 @@ function syncDesktopRoute(replace = false) {
 }
 
 function App() {
-  const [page, setPage] = useState(pageFromLocation);
-  const [role, setRole] = useState(roleFromLocation);
+  const locationState = routeStateFromLocation();
+  const [page, setPage] = useState(locationState.page);
+  const [role, setRole] = useState(locationState.role);
+  const [portalToken, setPortalToken] = useState(locationState.portalToken || "");
   const [roleOpen, setRoleOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(true);
@@ -311,6 +397,9 @@ function App() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [widgetPositions, setWidgetPositions] = useState(getDefaultWidgetPositions);
   const [data, setData] = useState(null);
+  const [portalCase, setPortalCase] = useState(null);
+  const [portalLoading, setPortalLoading] = useState(Boolean(locationState.portalToken));
+  const [portalError, setPortalError] = useState("");
   const [selectedCase, setSelectedCase] = useState(null);
   const [embeddedApp, setEmbeddedApp] = useState(null);
   const [error, setError] = useState("");
@@ -336,6 +425,37 @@ function App() {
       clearInterval(poll);
     };
   }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadPortalCase() {
+      if (!portalToken) {
+        setPortalCase(null);
+        setPortalError("");
+        setPortalLoading(false);
+        return;
+      }
+      setPortalLoading(true);
+      try {
+        const next = await api.caseDetail(portalToken);
+        if (!ignore) {
+          setPortalCase(next);
+          setPortalError("");
+        }
+      } catch (err) {
+        if (!ignore) {
+          setPortalCase(null);
+          setPortalError(err.message);
+        }
+      } finally {
+        if (!ignore) setPortalLoading(false);
+      }
+    }
+    loadPortalCase();
+    return () => {
+      ignore = true;
+    };
+  }, [portalToken]);
 
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 1000);
@@ -370,6 +490,7 @@ function App() {
       const nextState = routeStateFromLocation();
       setPage(nextState.page);
       setRole(nextState.role);
+      setPortalToken(nextState.portalToken || "");
       setWindowMode(isDesktopLocation() ? "minimized" : "open");
       setNavOpen(false);
       setRoleOpen(false);
@@ -382,6 +503,7 @@ function App() {
   const cases = data?.cases || [];
   const audit = data?.audit || [];
   const profiles = data?.profiles || [];
+  const preOnboardingTasks = data?.preOnboardingTasks || [];
   const roleConfigs = useMemo(() => buildRoleConfigs(profiles, cases), [profiles, cases]);
   const currentRole = roleConfigs[role] || ROLE_CONFIG[role];
   const meta = PAGE_META[page] || [page, ""];
@@ -397,6 +519,7 @@ function App() {
     setRole(nextRole);
     const nextPage = roleConfigs[nextRole].defaultPage;
     setPage(nextPage);
+    setPortalToken("");
     syncRoute(nextPage, nextRole);
     setRoleOpen(false);
     setNavOpen(false);
@@ -502,8 +625,8 @@ function App() {
                 <div className="win-content">
                   <main className="win-main">
                     {error && <div className="card" style={{ padding: 14, color: "var(--error)" }}>Backend unavailable: {error}</div>}
-                    {!data && !error && <div className="card" style={{ padding: 18 }}>Loading dashboard...</div>}
-                    {data && <PageRenderer page={page} data={data} cases={cases} metrics={metrics} audit={audit} openCase={openCaseDetail} setPage={setPage} />}
+                    {!data && !error && <LoadingShell />}
+                    {data && <PageRenderer page={page} data={data} cases={cases} metrics={metrics} audit={audit} openCase={openCaseDetail} setPage={setPage} portalCase={portalCase} portalToken={portalToken} portalLoading={portalLoading} portalError={portalError} preOnboardingTasks={preOnboardingTasks} />}
                   </main>
                 </div>
               </div>
@@ -547,26 +670,27 @@ function initialsFromDisplayName(name, fallback = "NJ") {
   return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
-function PageRenderer({ page, data, cases, metrics, audit, openCase, setPage }) {
-  if (page === "overview") return <Overview metrics={metrics} cases={cases} audit={audit} setPage={setPage} openCase={openCase} />;
-  if (page === "cases") return <Cases cases={cases} openCase={openCase} />;
-  if (page === "preonboard") return <PreOnboard cases={cases} followUps={data.followUps || []} />;
-  if (page === "exceptions") return <Exceptions cases={cases} gates={data.hil_gates} />;
-  if (page === "post") return <PostOnboard cases={cases} />;
-  if (page === "audit") return <Audit audit={audit} />;
-  if (page === "reports") return <Analytics analytics={data.analytics} />;
+function PageRenderer({ page, data, cases, metrics, audit, openCase, setPage, portalCase, portalToken, portalLoading, portalError }) {
+  if (page === "overview") return <HRDashboard metrics={metrics} cases={cases} audit={audit} onViewAllCases={() => setPage("cases")} onOpenCase={openCase} />;
+  if (page === "cases") return <CasesTable cases={cases} onOpenCase={openCase} />;
+  if (page === "preonboard") return <PreOnboardPanel tasks={data.preOnboardingTasks || []} followUps={data.followUps || []} />;
+  if (page === "portal-public") return <EmployeeView mode="public" item={portalCase} token={portalToken} loading={portalLoading} error={portalError} />;
+  if (page === "exceptions") return <ExceptionQueue cases={cases} gates={data.hil_gates} />;
+  if (page === "post") return <PostOnboardPanel cases={cases} />;
+  if (page === "audit") return <AuditPanel audit={audit} />;
+  if (page === "reports") return <ReportsPage analytics={data.analytics} />;
   if (page === "ops-dashboard") return <OpsDashboard metrics={metrics} cases={cases} gates={data.hil_gates} />;
   if (page === "hil-approvals") return <HilApprovals gates={data.hil_gates} cases={cases} />;
-  if (page === "sla") return <SlaMonitor cases={cases} />;
-  if (page === "emp-portal") return <EmployeePortal cases={cases} />;
-  if (page === "emp-docs") return <EmployeeDocs cases={cases} />;
-  if (page === "it-queue") return <ItQueue cases={cases} />;
-  if (page === "it-active") return <ItActive cases={cases} />;
-  if (page === "it-done") return <ItDone cases={cases} />;
-  if (page === "admin-tasks") return <AdminTasks cases={cases} />;
-  if (page === "admin-desk") return <AdminDesk cases={cases} />;
-  if (page === "admin-id") return <AdminId cases={cases} />;
-  return <Overview metrics={metrics} cases={cases} audit={audit} setPage={setPage} openCase={openCase} />;
+  if (page === "sla") return <SlaMonitor cases={cases} gates={data.hil_gates} />;
+  if (page === "emp-portal") return <EmployeeView mode="portal" cases={cases} />;
+  if (page === "emp-docs") return <EmployeeView mode="docs" cases={cases} />;
+  if (page === "it-queue") return <ITSupportView mode="queue" cases={cases} />;
+  if (page === "it-active") return <ITSupportView mode="active" cases={cases} />;
+  if (page === "it-done") return <ITSupportView mode="done" cases={cases} />;
+  if (page === "admin-tasks") return <AdminView mode="tasks" cases={cases} />;
+  if (page === "admin-desk") return <AdminView mode="desk" cases={cases} />;
+  if (page === "admin-id") return <AdminView mode="id" cases={cases} />;
+  return <HRDashboard metrics={metrics} cases={cases} audit={audit} onViewAllCases={() => setPage("cases")} onOpenCase={openCase} />;
 }
 
 function Titlebar({ role, roleConfig, onRoleClick, onClose, onMinimize, onMaximize, isMaximized }) {
@@ -908,24 +1032,50 @@ function CaseRow({ item, openCase }) {
   );
 }
 
-function PreOnboard({ cases, followUps }) {
-  const rows = cases.filter((item) => item.phase === "Pre-Onboarding");
+function PreOnboard({ tasks = [], followUps = [] }) {
+  const taskCounts = tasks.reduce((acc, task) => {
+    const team = task.assigned_team || "other";
+    acc[team] = (acc[team] || 0) + 1;
+    return acc;
+  }, {});
   return (
     <div className="g2">
-    <div className="card">
-      <div className="card-head">
-        <div><div className="card-title">Pre-Onboarding Task Panel</div><div className="card-sub">IT provisioning · Admin prep · Candidate follow-ups</div></div>
-        <span className="tag purple">{rows.length} Active</span>
+      <div className="card">
+        <div className="card-head">
+          <div><div className="card-title">Pre-Onboarding Task Panel</div><div className="card-sub">IT provisioning · Admin prep · Candidate follow-ups</div></div>
+          <span className="tag purple">{tasks.length} Tasks</span>
+        </div>
+        <div className="kpi-grid g3" style={{ padding: "0 14px 14px" }}>
+          <Kpi color="blue" label="IT Tasks" value={taskCounts.it || 0} meta="Laptop and email setup" />
+          <Kpi color="orange" label="Admin Tasks" value={taskCounts.admin || 0} meta="Desk and ID card prep" />
+          <Kpi color="green" label="Follow-Ups" value={followUps.length} meta="Reminder records" />
+        </div>
+        <div className="pre-task-table">
+          <div className="pre-task-head"><span>Task</span><span>Case</span><span>Team</span><span>Status</span><span>Due</span><span>SLA</span></div>
+          {!tasks.length && <div className="pre-task-row"><strong>No task rows returned</strong><span>Waiting for backend task records</span><span>-</span><span className="badge pending">Pending</span><span>-</span><span>-</span></div>}
+          {tasks.map((task) => (
+            <div className="pre-task-row" key={task.id || `${task.case_number}-${task.task_type}`}>
+              <strong>{formatTaskType(task.task_type)}</strong>
+              <span>{task.case_number || task.employee_id || "-"}</span>
+              <span>{formatStatusLabel(task.assigned_team)}</span>
+              <span><span className="pre-task-badge">{badge(task.status)}</span></span>
+              <span>{formatDateTime(task.due_date)}</span>
+              <span>{task.sla_compliant === false ? "At risk" : "On track"}</span>
+            </div>
+          ))}
+        </div>
       </div>
-      <TaskGrid columns={[["Candidate Follow-up", rows.filter((item) => item.docs !== "Verified")], ["IT Provisioning", rows.filter((item) => item.it !== "Completed")], ["Admin Prep", rows]]} />
-    </div>
-    <ReminderPanel followUps={followUps} />
+      <ReminderPanel followUps={followUps} />
     </div>
   );
 }
 
 function ReminderPanel({ followUps = [] }) {
-  const rows = followUps.slice(0, 8);
+  const grouped = Object.entries(groupByCase(followUps)).map(([caseNumber, rows]) => ({
+    caseNumber,
+    rows: rows.slice().sort((a, b) => new Date(a.scheduled_at || 0) - new Date(b.scheduled_at || 0)),
+    counts: sumFollowUpStatuses(rows)
+  }));
   return (
     <div className="card">
       <div className="card-head">
@@ -933,13 +1083,22 @@ function ReminderPanel({ followUps = [] }) {
         <span className="tag orange">{followUps.filter((item) => !item.sent_at).length} Pending</span>
       </div>
       <div className="reminder-list">
-        {!rows.length && <div className="reminder-row"><strong>No reminders returned</strong><span>Waiting for follow-up records</span></div>}
-        {rows.map((item) => (
-          <div className="reminder-row" key={item.id}>
-            <strong>{formatReminderType(item.follow_up_type)} · {item.case_number || item.employee_id}</strong>
-            <span>{formatDateTime(item.scheduled_at)} · {item.sent_at ? "Sent" : item.response_status || "Pending"}</span>
-          </div>
-        ))}
+        {!grouped.length && <div className="reminder-row"><strong>No reminders returned</strong><span>Waiting for follow-up records</span></div>}
+        {grouped.map((group) => {
+          const latest = group.rows[0];
+          return (
+            <div className="reminder-row reminder-group" key={group.caseNumber}>
+              <strong>{group.caseNumber} · {group.counts.sent || 0} sent · {group.counts.pending || 0} pending</strong>
+              <span>{formatDateTime(latest?.scheduled_at)} · {formatReminderType(latest?.follow_up_type)}</span>
+              <span className="reminder-chips">
+                <span className="tag purple">Scheduled {group.rows.length}</span>
+                <span className="tag green">Sent {group.counts.sent || 0}</span>
+                <span className="tag orange">Pending {group.counts.pending || 0}</span>
+              </span>
+              <span className="reminder-sub">{group.rows.map((item) => `${formatReminderType(item.follow_up_type)}: ${item.sent_at ? "Sent" : item.response_status || "Pending"}`).join(" · ")}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -997,7 +1156,7 @@ function ExceptionItem({ item }) {
       <div className="exc-head"><span className={`exc-tag ${tag}`}>{tag}</span><span className="exc-emp">{item.name}</span></div>
       <div className="exc-type">{item.scenario}</div>
       <div className="exc-desc">{item.caseId} · {item.phase} · {item.docs} · {item.it}</div>
-      <div className="exc-actions"><button className="btn-sys">Backend GET synced</button>{badge(item.st)}</div>
+      <div className="exc-actions"><button className="btn-sys">Live status</button>{badge(item.st)}</div>
     </div>
   );
 }
@@ -1035,17 +1194,44 @@ function HilApprovals({ gates, compact = false }) {
   );
 }
 
-function SlaMonitor({ cases }) {
+function SlaMonitor({ cases, gates = [] }) {
+  const pendingCases = cases.filter((item) => item.st === "hil");
+  const gateByCase = new Map(gates.filter((gate) => gate.decision === "pending").map((gate) => [gate.case_number, gate]));
+  const onTrack = cases.filter((x) => x.slaLabel === "On Track").length;
+  const atRisk = cases.filter((x) => x.st === "at-risk").length;
+  const breached = cases.filter((x) => x.st === "blocked").length;
   return (
     <>
-      <div className="kpi-grid g3"><Kpi color="green" label="On Track" value={cases.filter((x) => x.slaLabel === "On Track").length} meta="Within SLA" /><Kpi color="orange" label="At Risk" value={cases.filter((x) => x.st === "at-risk").length} meta="Within breach window" /><Kpi color="red" label="Breached" value={cases.filter((x) => x.st === "blocked").length} meta="Escalation required" /></div>
+      <div className="kpi-grid g3"><Kpi color="green" label="On Track" value={onTrack} meta="Within SLA" /><Kpi color="orange" label="At Risk" value={atRisk} meta="Within breach window" /><Kpi color="red" label="Breached" value={breached} meta="Escalation required" /></div>
+      <div className="card">
+        <div className="card-head">
+          <div><div className="card-title">SLA Tracking - Pending HIL</div><div className="card-sub">Deadline and escalation overview</div></div>
+          <span className="tag pink">{pendingCases.length} Reviewing</span>
+        </div>
+        <div className="sla-list">
+          {!pendingCases.length && <div className="sla-row"><strong>No pending HIL cases</strong><span>SLA countdown will appear here once a case enters review</span></div>}
+          {pendingCases.map((item) => {
+            const gate = gateByCase.get(item.caseId);
+            const hoursLeft = gate?.token_expires_at ? hoursBetween(new Date(), new Date(gate.token_expires_at)) : null;
+            const reviewStart = gate?.email_sent_at ? new Date(gate.email_sent_at) : null;
+            return (
+              <div className="sla-row" key={item.caseId}>
+                <strong>{item.name} · {item.caseId}</strong>
+                <span>{item.owner} · {item.dept} · {item.prog}% complete</span>
+                <span className={`sla-pill ${hoursLeft !== null && hoursLeft <= 1 ? "late" : "watch"}`}>Time in review: {hoursLeft === null ? "Unknown" : formatHoursLeft(hoursLeft)}</span>
+                <span className="sla-sub">{reviewStart ? `Review started ${formatDateTime(reviewStart.toISOString())}` : "Review timing derived from gate expiration"}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
       <Board title="SLA Tracking - All Cases" subtitle="Deadline and escalation overview" rows={cases} />
     </>
   );
 }
 
-function EmployeePortal({ cases }) {
-  const item = pickEmployeeCase(cases);
+function EmployeePortal({ cases, item: providedItem }) {
+  const item = providedItem || pickEmployeeCase(cases);
   return (
     <div className="employee-portal">
       <EmployeeHero item={item} />
@@ -1061,6 +1247,43 @@ function EmployeePortal({ cases }) {
 function EmployeeDocs({ cases }) {
   const item = pickEmployeeCase(cases);
   return <div className="employee-portal"><EmployeeHero item={item} compact /><EmployeeReadOnlyCards item={item} focus="docs" /></div>;
+}
+
+function PublicPortal({ item, token, loading, error }) {
+  if (loading) {
+    return <LoadingShell title="Opening secure portal" subtitle={token ? `Looking up ${token}` : "Fetching your case"} />;
+  }
+  if (error) {
+    return <div className="card" style={{ padding: 20 }}><div className="card-title">Portal unavailable</div><div className="card-sub">{error}</div></div>;
+  }
+  if (!item || !item.caseId) {
+    return <div className="card" style={{ padding: 20 }}><div className="card-title">Case not found</div><div className="card-sub">No onboarding case matched this portal token.</div></div>;
+  }
+  return (
+    <div className="employee-portal">
+      <div className="card" style={{ padding: 16 }}>
+        <div className="card-head" style={{ padding: 0, marginBottom: 12 }}>
+          <div>
+            <div className="card-title">Secure Employee Portal</div>
+            <div className="card-sub">Read-only case status, document state, and onboarding progress</div>
+          </div>
+          <span className="tag purple">{item.caseId}</span>
+        </div>
+        <div className="employee-status-list" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+          <InfoPill label="Case status" value={statusLabels[item.st] || formatStatusLabel(item.st)} />
+          <InfoPill label="Document status" value={item.docs || "Pending"} />
+          <InfoPill label="Onboarding progress" value={`${item.prog || 0}%`} />
+          <InfoPill label="Assigned HR" value={item.owner || "HR Coordinator"} />
+        </div>
+      </div>
+      <EmployeeHero item={item} />
+      <div className="employee-grid">
+        <EmployeeJourney item={item} />
+        <EmployeeStatusPanel item={item} />
+      </div>
+      <EmployeeReadOnlyCards item={item} focus="docs" />
+    </div>
+  );
 }
 
 function pickEmployeeCase(cases) {
@@ -1228,12 +1451,24 @@ function EmployeeReadOnlyCards({ item, focus }) {
 
 function DocumentSubmissionDetails({ item }) {
   const docs = getDocumentSubmissions(item);
+  const docRejections = docs.filter((doc) => doc.status === "Rejected" || doc.rejectionReason || doc.correctionInstructions);
   return (
     <div className="card employee-doc-card">
       <div className="card-head">
         <div><div className="card-title">Submitted Documents</div><div className="card-sub">Read-only validation trail from onboarding records</div></div>
         <span className="tag purple">{docs.filter((doc) => doc.status === "Validated").length}/{docs.length} Validated</span>
       </div>
+      {!!docRejections.length && (
+        <div className="doc-remediation">
+          <strong>Rejected documents need correction</strong>
+          {docRejections.map((doc) => (
+            <div className="doc-remediation-row" key={`${doc.name}-remediation`}>
+              <span>{doc.name}</span>
+              <small>{[doc.rejectionReason, doc.correctionInstructions].filter(Boolean).join(" · ")}</small>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="employee-doc-table">
         <div className="employee-doc-head"><span>Document</span><span>Submitted</span><span>Timing</span><span>Validation</span></div>
         {!docs.length && (
@@ -1246,7 +1481,7 @@ function DocumentSubmissionDetails({ item }) {
         )}
         {docs.map((doc) => (
           <div className="employee-doc-row" key={doc.name}>
-            <div><strong>{doc.name}</strong><small>{doc.rejectionReason || doc.correctionInstructions || doc.owner}</small></div>
+            <div><strong>{doc.name}</strong><small>{doc.status === "Rejected" ? [doc.rejectionReason, doc.correctionInstructions].filter(Boolean).join(" · ") : doc.rejectionReason || doc.correctionInstructions || doc.owner}</small></div>
             <span>{doc.submittedAt}</span>
             <span className={`doc-timing ${doc.timing === "Late" ? "late" : doc.timing === "Pending" ? "pending" : "ontime"}`}>{doc.timing}</span>
             <span className={`doc-validation ${doc.status.toLowerCase().replace(/\s+/g, "-")}`}>{doc.status}</span>
@@ -1264,10 +1499,27 @@ function getDocumentSubmissions(item = {}) {
     owner: doc.owner || doc.source || doc.uploaded_by || "-",
     submittedAt: doc.submitted_at || doc.created_at || "-",
     timing: doc.timing || doc.sla_status || "-",
-    status: doc.status || "Pending",
-    rejectionReason: doc.rejection_reason,
-    correctionInstructions: doc.correction_instructions
+    status: formatStatusLabel(doc.status || "Pending"),
+    rejectionReason: doc.rejection_reason || item.rejectionReason,
+    correctionInstructions: doc.correction_instructions || item.correctionInstructions
   }));
+}
+
+function LoadingShell({ title = "Loading dashboard", subtitle = "Fetching live data from the backend" }) {
+  return (
+    <div className="loading-shell">
+      <div className="card" style={{ padding: 20 }}>
+        <div className="card-title">{title}</div>
+        <div className="card-sub">{subtitle}</div>
+        <div className="loading-grid">
+          <div className="loading-card" />
+          <div className="loading-card" />
+          <div className="loading-card" />
+          <div className="loading-card loading-wide" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ItQueue({ cases }) {
