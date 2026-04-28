@@ -144,14 +144,13 @@ FROM seed_cases sc
 JOIN onboarding_cases oc ON oc.case_number = sc.case_number
 CROSS JOIN (
     VALUES
-        ('7_day', 7),
-        ('3_day', 3),
-        ('0_day', 0)
+        ('t_minus_7', 7),
+        ('t_minus_3', 3),
+        ('t_plus_0', 0)
 ) AS follow(follow_up_type, days_before);
 
 INSERT INTO documents (
     case_id, candidate_id, document_type, file_name, status,
-    owner, source, uploaded_by, timing, sla_status,
     submitted_at, validated_at, rejection_reason, correction_instructions,
     created_at, updated_at
 )
@@ -169,11 +168,6 @@ SELECT
         WHEN sc.docs_status = 'partial' THEN 'pending'
         ELSE sc.docs_status
     END,
-    'Candidate',
-    'employee_portal',
-    sc.first_name || ' ' || sc.last_name,
-    CASE WHEN sc.sla_breach THEN 'Late' WHEN sc.docs_status IN ('not_submitted', 'not_started') THEN 'Pending' ELSE 'On Time' END,
-    CASE WHEN sc.sla_breach THEN 'late' WHEN sc.docs_status IN ('not_submitted', 'not_started') THEN 'pending' ELSE 'on_time' END,
     CASE WHEN sc.docs_status IN ('not_submitted', 'not_started') THEN NULL ELSE NOW() - (doc.doc_order || ' days')::interval END,
     CASE WHEN sc.docs_status IN ('validated', 'approved') THEN NOW() - ((doc.doc_order - 1) || ' days')::interval ELSE NULL END,
     CASE WHEN sc.docs_status = 'rejected' AND doc.document_type = 'address_proof' THEN 'Address proof failed verification.' ELSE NULL END,
@@ -191,14 +185,13 @@ CROSS JOIN (
 ) AS doc(doc_order, document_type);
 
 INSERT INTO provisioning_items (
-    case_id, item_type, assigned_team, description, status,
+    case_id, item_type, system_name, status,
     requested_at, completed_at, notes, created_at, updated_at
 )
 SELECT
     oc.id,
     item.item_type,
-    item.assigned_team,
-    item.description,
+    item.system_name,
     CASE
         WHEN sc.it_status = 'completed' THEN 'completed'
         WHEN sc.it_status = 'failed_retrying' AND item.item_type = 'access_card' THEN 'failed_retrying'
@@ -208,21 +201,21 @@ SELECT
     END,
     NOW() - (sc.idx || ' days')::interval,
     CASE WHEN sc.it_status = 'completed' THEN NOW() - INTERVAL '1 day' ELSE NULL END,
-    'Provisioning scenario for ' || item.item_type,
+    item.notes,
     NOW() - (sc.idx || ' days')::interval,
     NOW()
 FROM seed_cases sc
 JOIN onboarding_cases oc ON oc.case_number = sc.case_number
 CROSS JOIN (
     VALUES
-        ('laptop', 'it', 'Laptop allocation and base software setup'),
-        ('email_account', 'it', 'Corporate email account creation'),
-        ('access_card', 'admin', 'Office access card activation')
-) AS item(item_type, assigned_team, description);
+        ('laptop',        'Laptop Provisioning',   'Laptop allocation and base software setup'),
+        ('email_account', 'Email Account',          'Corporate email account creation'),
+        ('access_card',   'Office Access Card',     'Office access card activation')
+) AS item(item_type, system_name, notes);
 
 INSERT INTO post_onboarding_items (
-    case_id, payroll_completed, pf_completed, buddy_assigned,
-    feedback_collected, docs_archived, created_at, updated_at
+    case_id, payroll_confirmed, pf_confirmed, buddy_assigned,
+    manager_checkin, policy_acknowledged, created_at, updated_at
 )
 SELECT
     oc.id,

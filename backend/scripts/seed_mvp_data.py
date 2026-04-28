@@ -197,7 +197,7 @@ async def _seed_tasks(case_id, index: int, status: str):
 
 
 async def _seed_followups(case_id, index: int):
-    for kind, days in [("7_day", 7), ("3_day", 3), ("0_day", 0)]:
+    for kind, days in [("t_minus_7", 7), ("t_minus_3", 3), ("t_plus_0", 0)]:
         sent = NOW - timedelta(days=max(0, days - index % 3))
         await execute(
             """

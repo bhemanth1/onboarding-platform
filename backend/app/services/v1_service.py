@@ -336,8 +336,8 @@ class V1Service:
         mvp = MvpReadService()
         analytics = mvp.analytics_from_cases(await mvp.cases())
         kpis = await self.kpis()
-        if report_id == "r01-pipeline":
-            return {"report": report_id, "kpis": kpis, "by_phase": analytics["byPhase"], "by_status": analytics["byStatus"]}
+        if report_id in ("r01-pipeline", "r01-overview"):
+            return {"report": "r01-pipeline", "kpis": kpis, "by_phase": analytics["byPhase"], "by_status": analytics["byStatus"]}
         if report_id == "r02-documents":
             return {"report": report_id, "document_validation": analytics["byBackgroundVerification"]}
         if report_id == "r03-provisioning":
