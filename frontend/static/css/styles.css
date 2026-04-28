@@ -359,8 +359,8 @@ body::after{
 
 /* Brand / Start — with open-app dot */
 .tb-start{
-  display:flex;align-items:center;justify-content:center;
-  width:40px;height:40px;
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  width:auto;min-width:40px;height:40px;padding:0 10px 0 8px;
   border-radius:var(--r-md);
   cursor:pointer;
   flex-shrink:0;
@@ -385,13 +385,18 @@ body::after{
 }
 .tb-start:hover[data-tip]::before{opacity:1}
 .tb-logo-mark{
-  width:26px;height:26px;border-radius:6px;
-  background:linear-gradient(135deg,#A855F7 0%,#5929d0 50%,#01CAB8 100%);
+  width:24px;height:24px;border-radius:5px;
+  background:#5929D0;
   display:flex;align-items:center;justify-content:center;
   color:#fff;font-size:11px;font-weight:800;
   box-shadow:0 2px 6px rgba(89,41,208,.3);
   flex-shrink:0;
   letter-spacing:-0.5px;
+}
+.tb-logo-text{
+  font-size:11px;font-weight:700;
+  color:var(--n0);letter-spacing:0.04em;
+  white-space:nowrap;
 }
 
 /* Taskbar separator */

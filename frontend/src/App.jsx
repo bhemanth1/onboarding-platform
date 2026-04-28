@@ -1778,6 +1778,7 @@ function Taskbar({ roleConfig, role, clock, onRoleClick, onStartClick, windowMod
             <path d="M5.2 9.2v6.3h3.2v-3.4h3.2v3.4h3.2V9.2" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
+        <span className="tb-logo-text">AEGIS.AI</span>
       </button>
       <div className="tb-sep" />
       <div className="tb-nav">

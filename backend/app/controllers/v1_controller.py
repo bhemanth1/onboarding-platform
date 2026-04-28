@@ -123,6 +123,18 @@ async def provisioning(case_ref: str):
     return await _service().provisioning(case_ref)
 
 
+@router.get("/consents/{case_ref}")
+async def consents(case_ref: str):
+    _require_postgres()
+    return await _service().consents(case_ref)
+
+
+@router.get("/email-templates")
+async def email_templates():
+    _require_postgres()
+    return await _service().email_templates()
+
+
 @router.get("/reports/{report_id}")
 async def report(report_id: str):
     return await _service().reports(report_id)

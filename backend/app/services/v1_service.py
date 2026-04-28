@@ -270,6 +270,7 @@ class V1Service:
             *[values[key] for key in insert_cols],
         )
         await self.recalculate_and_save_progress(str(case["id"]))
+        await self._check_and_trigger_hil(case["id"])
         return _serialise(dict(row))
 
     async def provisioning(self, case_ref: str) -> list[dict]:
@@ -322,6 +323,12 @@ class V1Service:
         if not first_name or not last_name or not email:
             raise HTTPException(status_code=422, detail="first_name, last_name, and personal_email/email are required")
 
+        raw_date = payload.get("joining_date") or payload.get("joiningDate")
+        if isinstance(raw_date, str):
+            from datetime import date as _date
+            raw_date = _date.fromisoformat(raw_date)
+        joining_date_value = raw_date or date.today() + timedelta(days=7)
+
         candidate = await fetch_row(
             """
             INSERT INTO candidates (
@@ -339,7 +346,7 @@ class V1Service:
             payload.get("role") or "New Joiner",
             payload.get("department") or "General",
             payload.get("manager_name") or payload.get("managerName") or "HR Coordinator",
-            payload.get("joining_date") or payload.get("joiningDate") or date.today() + timedelta(days=7),
+            joining_date_value,
             payload.get("employee_type") or "new_hire",
             payload.get("office_location") or "Hyderabad, IN",
             payload.get("nationality") or "",
@@ -416,6 +423,172 @@ class V1Service:
         )
         return {"status": "synced", "result": result}
 
+    async def consents(self, case_ref: str) -> list[dict]:
+        case = await self._find_case(case_ref)
+        rows = await fetch_rows(
+            """
+            SELECT id, processing_category, acknowledged_at, ip_address, template_version, created_at
+            FROM consents
+            WHERE case_id = $1
+            ORDER BY processing_category ASC
+            """,
+            case["id"],
+        )
+        return _serialise_rows(rows)
+
+    async def email_templates(self) -> list[dict]:
+        rows = await fetch_rows(
+            """
+            SELECT id, template_name, version, approved_by, approved_at, is_active, created_at
+            FROM email_templates
+            ORDER BY template_name ASC, version DESC
+            """
+        )
+        return _serialise_rows(rows)
+
+    async def schedule_due_reminders(self) -> dict:
+        """Mark follow-up reminders as sent if due; suppresses if docs submitted or case in pending_hil."""
+        due = await fetch_rows(
+            """
+            SELECT fu.id, fu.follow_up_type, oc.status, oc.docs_status
+            FROM follow_ups fu
+            JOIN onboarding_cases oc ON oc.id = fu.case_id
+            WHERE fu.scheduled_at <= NOW()
+              AND fu.sent_at IS NULL
+            """
+        )
+        sent, suppressed = 0, 0
+        for row in due:
+            if row["docs_status"] != "not_submitted" or row["status"] == "pending_hil":
+                suppressed += 1
+                continue
+            await execute("UPDATE follow_ups SET sent_at = NOW() WHERE id = $1", row["id"])
+            sent += 1
+        return {"sent": sent, "suppressed": suppressed}
+
+    async def start_sla_clocks_for_new_pending_hil(self) -> dict:
+        """Start the 4-business-hour SLA clock for cases that just entered pending_hil."""
+        result = await execute(
+            """
+            UPDATE onboarding_cases
+            SET sla_pending_hil_started_at = NOW(), updated_at = NOW()
+            WHERE status = 'pending_hil'
+              AND sla_pending_hil_started_at IS NULL
+            """
+        )
+        return {"result": result}
+
+    async def check_sla_breaches(self) -> dict:
+        """Evaluate 4-business-hour SLA for pending_hil cases; escalate at 75%, breach at 100%."""
+        rows = await fetch_rows(
+            """
+            SELECT id, case_number, employee_id, candidate_id,
+                   sla_pending_hil_started_at, sla_escalated_at, sla_breach
+            FROM onboarding_cases
+            WHERE status = 'pending_hil'
+              AND sla_pending_hil_started_at IS NOT NULL
+              AND (sla_breach = FALSE OR sla_escalated_at IS NULL)
+            """
+        )
+        now = datetime.utcnow()
+        escalated, breached = 0, 0
+        for row in rows:
+            started = row["sla_pending_hil_started_at"]
+            if isinstance(started, str):
+                started = datetime.fromisoformat(started)
+            elapsed = _business_hours_elapsed(started, now)
+            case_id = row["id"]
+            if elapsed >= 4.0 and not row["sla_breach"]:
+                await execute(
+                    "UPDATE onboarding_cases SET sla_breach = TRUE, updated_at = NOW() WHERE id = $1",
+                    case_id,
+                )
+                await execute(
+                    """
+                    INSERT INTO audit_logs (case_id, candidate_id, employee_id, phase, event_type,
+                      rule_ref, rule_version, event_description, outcome, agent_id, created_at)
+                    VALUES ($1, $2, $3, 'onboarding', 'sla_breach', 'BR002-SLA', 'V6', $4, 'breached', $5, NOW())
+                    """,
+                    case_id, row["candidate_id"], row["employee_id"],
+                    f"4-business-hour SLA breached for case {row['case_number']}.",
+                    settings.AGENT_ID,
+                )
+                breached += 1
+            elif elapsed >= 3.0 and not row["sla_escalated_at"]:
+                await execute(
+                    "UPDATE onboarding_cases SET sla_escalated_at = NOW(), updated_at = NOW() WHERE id = $1",
+                    case_id,
+                )
+                await execute(
+                    """
+                    INSERT INTO audit_logs (case_id, candidate_id, employee_id, phase, event_type,
+                      rule_ref, rule_version, event_description, outcome, agent_id, created_at)
+                    VALUES ($1, $2, $3, 'onboarding', 'sla_75_escalation', 'BR002-SLA', 'V6', $4, 'escalated', $5, NOW())
+                    """,
+                    case_id, row["candidate_id"], row["employee_id"],
+                    f"75% SLA threshold reached for case {row['case_number']}. Escalation triggered.",
+                    settings.AGENT_ID,
+                )
+                escalated += 1
+        return {"checked": len(rows), "escalated": escalated, "breached": breached}
+
+    async def _check_and_trigger_hil(self, case_id: int) -> None:
+        """Transition case to pending_hil automatically when all documents are validated."""
+        counts = await fetch_row(
+            """
+            SELECT
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status IN ('validated', 'approved', 'verified'))::int AS validated
+            FROM documents
+            WHERE case_id = $1
+            """,
+            case_id,
+        )
+        if not counts or counts["total"] == 0 or counts["total"] != counts["validated"]:
+            return
+        case = await fetch_row(
+            "SELECT status, case_number, employee_id, candidate_id FROM onboarding_cases WHERE id = $1",
+            case_id,
+        )
+        if not case or case["status"] == "pending_hil":
+            return
+        await execute(
+            "UPDATE onboarding_cases SET status = 'pending_hil', updated_at = NOW() WHERE id = $1",
+            case_id,
+        )
+        await execute(
+            """
+            INSERT INTO audit_logs (case_id, candidate_id, employee_id, phase, event_type,
+              rule_ref, rule_version, event_description, outcome, agent_id, created_at)
+            VALUES ($1, $2, $3, 'onboarding', 'hil_trigger', 'BR002-STEP5', 'V6', $4, 'pending_hil', $5, NOW())
+            """,
+            case_id, case["candidate_id"], case["employee_id"],
+            f"All documents validated for case {case['case_number']}. Case transitioned to pending_hil.",
+            settings.AGENT_ID,
+        )
+
+    async def _get_active_template_version(self, template_name: str) -> str | None:
+        row = await fetch_row(
+            "SELECT version FROM email_templates WHERE template_name = $1 AND is_active = TRUE ORDER BY id DESC LIMIT 1",
+            template_name,
+        )
+        return (row or {}).get("version")
+
+    async def _seed_initial_consents(self, case, candidate) -> None:
+        try:
+            for category in ["data_processing", "background_check", "communication", "payroll"]:
+                await execute(
+                    """
+                    INSERT INTO consents (case_id, candidate_id, processing_category, created_at)
+                    VALUES ($1, $2, $3, NOW())
+                    """,
+                    case["id"],
+                    candidate["id"],
+                    category,
+                )
+        except Exception:
+            pass  # Table not yet present; apply DDL to enable consent tracking
+
     async def _seed_trigger_records(self, case, candidate) -> None:
         for task_type, team, description in [
             ("laptop_setup", "it", "Laptop allocation for new joiner"),
@@ -438,17 +611,35 @@ class V1Service:
         joining_date = candidate_values.get("joining_date") or date.today()
         if isinstance(joining_date, datetime):
             joining_date = joining_date.date()
+        fu_cols = await table_columns("follow_ups")
+        has_template_version = "template_version" in fu_cols
+        template_versions: dict[str, str | None] = {}
+        if has_template_version:
+            for ft in ["t_minus_7", "t_minus_3", "t_plus_0"]:
+                template_versions[ft] = await self._get_active_template_version(ft)
         for follow_type, days_before in [("t_minus_7", 7), ("t_minus_3", 3), ("t_plus_0", 0)]:
             scheduled_at = datetime.combine(joining_date - timedelta(days=days_before), datetime.min.time()).replace(hour=9)
-            await execute(
-                """
-                INSERT INTO follow_ups (case_id, follow_up_type, scheduled_at, channel, response_status, notes, created_at)
-                VALUES ($1, $2, $3, 'email', 'pending', 'Auto-created by candidate trigger', NOW())
-                """,
-                case["id"],
-                follow_type,
-                scheduled_at,
-            )
+            if has_template_version:
+                await execute(
+                    """
+                    INSERT INTO follow_ups (case_id, follow_up_type, scheduled_at, channel, response_status, notes, template_version, created_at)
+                    VALUES ($1, $2, $3, 'email', 'pending', 'Auto-created by candidate trigger', $4, NOW())
+                    """,
+                    case["id"],
+                    follow_type,
+                    scheduled_at,
+                    template_versions.get(follow_type),
+                )
+            else:
+                await execute(
+                    """
+                    INSERT INTO follow_ups (case_id, follow_up_type, scheduled_at, channel, response_status, notes, created_at)
+                    VALUES ($1, $2, $3, 'email', 'pending', 'Auto-created by candidate trigger', NOW())
+                    """,
+                    case["id"],
+                    follow_type,
+                    scheduled_at,
+                )
         await execute(
             """
             INSERT INTO audit_logs (
@@ -463,6 +654,7 @@ class V1Service:
             f"Pre-onboarding workflow triggered for {candidate['first_name']} {candidate['last_name']}.",
             settings.AGENT_ID,
         )
+        await self._seed_initial_consents(case, candidate)
 
     async def _ensure_role_profiles(self) -> None:
         await execute(
@@ -569,6 +761,29 @@ class V1Service:
         if not bool_values:
             return 0
         return round(100 * sum(1 for value in bool_values if value) / len(bool_values))
+
+
+def _business_hours_elapsed(start_utc: datetime, end_utc: datetime) -> float:
+    """Return business hours (Mon–Fri 09:00–18:00 IST = UTC+5:30) elapsed between two UTC datetimes."""
+    ist_offset = timedelta(hours=5, minutes=30)
+    start_naive = start_utc.replace(tzinfo=None) if start_utc.tzinfo else start_utc
+    end_naive = end_utc.replace(tzinfo=None) if end_utc.tzinfo else end_utc
+    start_ist = start_naive + ist_offset
+    end_ist = end_naive + ist_offset
+    BH_START, BH_END = 9, 18
+    total_secs = 0.0
+    current_day = start_ist.date()
+    end_day = end_ist.date()
+    while current_day <= end_day:
+        if current_day.weekday() < 5:
+            day_bh_start = datetime.combine(current_day, datetime.min.time()).replace(hour=BH_START)
+            day_bh_end = datetime.combine(current_day, datetime.min.time()).replace(hour=BH_END)
+            window_start = max(start_ist.replace(tzinfo=None) if start_ist.tzinfo else start_ist, day_bh_start)
+            window_end = min(end_ist.replace(tzinfo=None) if end_ist.tzinfo else end_ist, day_bh_end)
+            if window_end > window_start:
+                total_secs += (window_end - window_start).total_seconds()
+        current_day += timedelta(days=1)
+    return total_secs / 3600
 
 
 async def _completion_percent(table: str, case_id, complete_sql: str) -> int:

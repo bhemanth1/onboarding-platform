@@ -206,3 +206,51 @@ CREATE INDEX IF NOT EXISTS idx_pre_onboarding_tasks_case_id ON pre_onboarding_ta
 CREATE INDEX IF NOT EXISTS idx_follow_ups_case_id ON follow_ups(case_id);
 CREATE INDEX IF NOT EXISTS idx_hil_gates_case_id ON hil_gates(case_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_case_id ON audit_logs(case_id);
+
+-- BR002 Step 3: Consent tracking
+CREATE TABLE IF NOT EXISTS consents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+    candidate_id UUID REFERENCES candidates(id) ON DELETE SET NULL,
+    processing_category VARCHAR(100) NOT NULL,
+    acknowledged_at TIMESTAMPTZ,
+    ip_address VARCHAR(50),
+    template_version VARCHAR(20),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_consents_case_id ON consents(case_id);
+
+-- BR001 Action 7: Email template versioning
+CREATE TABLE IF NOT EXISTS email_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    template_name VARCHAR(100) NOT NULL,
+    version VARCHAR(20) NOT NULL,
+    content TEXT,
+    approved_by VARCHAR(100),
+    approved_at TIMESTAMPTZ,
+    is_active BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (template_name, version)
+);
+
+INSERT INTO email_templates (template_name, version, content, approved_by, approved_at, is_active)
+VALUES
+  ('t_minus_7', 'v1.0',
+   'Dear {{first_name}}, your joining date at {{company}} is in 7 days on {{joining_date}}. Please complete your onboarding documents at your earliest convenience.',
+   'System', NOW(), TRUE),
+  ('t_minus_3', 'v1.0',
+   'Dear {{first_name}}, your joining date at {{company}} is in 3 days on {{joining_date}}. This is a reminder to ensure all onboarding tasks are completed.',
+   'System', NOW(), TRUE),
+  ('t_plus_0', 'v1.0',
+   'Dear {{first_name}}, welcome to your first day at {{company}}! Your HR coordinator will be in touch shortly. We look forward to having you on board.',
+   'System', NOW(), TRUE)
+ON CONFLICT (template_name, version) DO NOTHING;
+
+-- BR002 HR Approval SLA: timer tracking columns
+ALTER TABLE IF EXISTS onboarding_cases
+    ADD COLUMN IF NOT EXISTS sla_pending_hil_started_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS sla_escalated_at TIMESTAMPTZ;
+
+-- BR001 Action 7: link follow-up records to template version
+ALTER TABLE IF EXISTS follow_ups
+    ADD COLUMN IF NOT EXISTS template_version VARCHAR(20);

@@ -136,6 +136,8 @@ async def create_schema(conn: asyncpg.Connection) -> None:
           is_completed BOOLEAN DEFAULT FALSE,
           completed_at TIMESTAMPTZ,
           sla_breach BOOLEAN DEFAULT FALSE,
+          sla_pending_hil_started_at TIMESTAMPTZ,
+          sla_escalated_at TIMESTAMPTZ,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         )
@@ -225,6 +227,7 @@ async def create_schema(conn: asyncpg.Connection) -> None:
           response_status VARCHAR(120),
           responded_at TIMESTAMPTZ,
           notes TEXT,
+          template_version VARCHAR(20),
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         )
@@ -273,6 +276,54 @@ async def create_schema(conn: asyncpg.Connection) -> None:
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         )
+        """
+    )
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS consents (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          case_id UUID REFERENCES onboarding_cases(id) ON DELETE CASCADE,
+          candidate_id UUID REFERENCES candidates(id) ON DELETE SET NULL,
+          processing_category VARCHAR(100) NOT NULL,
+          acknowledged_at TIMESTAMPTZ,
+          ip_address VARCHAR(50),
+          template_version VARCHAR(20),
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """
+    )
+    await conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_consents_case_id ON consents(case_id)"
+    )
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS email_templates (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          template_name VARCHAR(100) NOT NULL,
+          version VARCHAR(20) NOT NULL,
+          content TEXT,
+          approved_by VARCHAR(100),
+          approved_at TIMESTAMPTZ,
+          is_active BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE (template_name, version)
+        )
+        """
+    )
+    await conn.execute(
+        """
+        INSERT INTO email_templates (template_name, version, content, approved_by, approved_at, is_active)
+        VALUES
+          ('t_minus_7', 'v1.0',
+           'Dear {{first_name}}, your joining date is in 7 days on {{joining_date}}. Please complete your onboarding documents at your earliest convenience.',
+           'System', NOW(), TRUE),
+          ('t_minus_3', 'v1.0',
+           'Dear {{first_name}}, your joining date is in 3 days on {{joining_date}}. This is a reminder to ensure all onboarding tasks are completed.',
+           'System', NOW(), TRUE),
+          ('t_plus_0', 'v1.0',
+           'Dear {{first_name}}, welcome to your first day! Your HR coordinator will be in touch shortly.',
+           'System', NOW(), TRUE)
+        ON CONFLICT (template_name, version) DO NOTHING
         """
     )
 
