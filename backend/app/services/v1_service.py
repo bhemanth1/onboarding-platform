@@ -64,22 +64,32 @@ class V1Service:
               oc.phase,
               oc.status,
               oc.is_completed,
+              oc.completed_at,
               oc.pre_onboarding_progress,
               oc.onboarding_progress,
               oc.post_onboarding_progress,
               oc.overall_progress,
               oc.it_status,
               oc.docs_status,
+              oc.payroll_status,
+              oc.pf_status,
               oc.sla_breach,
               c.first_name,
               c.last_name,
               c.role,
               c.department,
+              c.manager_name,
               c.office_location,
               c.joining_date,
               doc.rejection_reason,
               doc.correction_instructions,
-              hg.decision AS hr_verification_decision
+              hg.decision AS hr_verification_decision,
+              poi.buddy_assigned,
+              poi.manager_checkin,
+              poi.policy_acknowledged,
+              poi.payroll_confirmed,
+              poi.pf_confirmed,
+              fw.sent_at IS NOT NULL AS welcome_email_sent
             FROM onboarding_cases oc
             JOIN candidates c ON c.id = oc.candidate_id
             LEFT JOIN LATERAL (
@@ -97,6 +107,18 @@ class V1Service:
               ORDER BY created_at DESC
               LIMIT 1
             ) hg ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT buddy_assigned, manager_checkin, policy_acknowledged, payroll_confirmed, pf_confirmed
+              FROM post_onboarding_items
+              WHERE case_id = oc.id
+              LIMIT 1
+            ) poi ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT sent_at
+              FROM follow_ups
+              WHERE case_id = oc.id AND follow_up_type = 't_plus_0'
+              LIMIT 1
+            ) fw ON TRUE
             ORDER BY c.joining_date ASC, oc.created_at DESC
             """
         )
@@ -120,19 +142,29 @@ class V1Service:
                 "ini": f"{first[:1]}{last[:1]}".upper() or "AE",
                 "role": row["role"] or "New Joiner",
                 "dept": row["department"] or "Onboarding",
+                "managerName": row.get("manager_name") or "",
                 "owner": self._hr_owner(row["department"], row["office_location"]),
                 "phase": phase,
                 "phaseKey": row["phase"],
                 "st": status,
                 "rawStatus": row["status"],
                 "isCompleted": bool(row["is_completed"]),
+                "completedAt": _serialise(row.get("completed_at")),
                 "join": _serialise(row["joining_date"]),
                 "prog": progress,
                 "it": self._label(row["it_status"]),
                 "docs": docs,
+                "payrollStatus": self._label(row.get("payroll_status")),
+                "pfStatus": self._label(row.get("pf_status")),
                 "rejectionReason": row["rejection_reason"],
                 "correctionInstructions": row["correction_instructions"],
                 "backgroundVerification": row["hr_verification_decision"],
+                "buddyAssigned": bool(row.get("buddy_assigned") or False),
+                "managerCheckin": bool(row.get("manager_checkin") or False),
+                "policyAcknowledged": bool(row.get("policy_acknowledged") or False),
+                "payrollConfirmed": bool(row.get("payroll_confirmed") or False),
+                "pfConfirmed": bool(row.get("pf_confirmed") or False),
+                "welcomeEmailSent": bool(row.get("welcome_email_sent") or False),
                 "scenario": self._scenario(status, phase),
                 "slaLabel": "SLA Watch" if status in {"blocked", "at-risk"} else "On Track",
                 "riskScore": self._risk_score(status, progress),

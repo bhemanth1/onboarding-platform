@@ -1,15 +1,19 @@
+import { useState, useEffect } from "react";
+import { api } from "../api";
+
 function pickCase(cases = []) {
   return cases.find((item) => item.st !== "completed") || cases[0] || null;
 }
 
-function DocumentTable({ item }) {
+function DocumentTable({ item, loading }) {
   const docs = item?.documentRows || item?.documents || [];
   return (
     <div className="card employee-doc-card">
       <div className="card-head"><div className="card-title">Submitted Documents</div></div>
       <div className="employee-doc-table">
         <div className="employee-doc-head"><span>Document</span><span>Submitted</span><span>Timing</span><span>Validation</span></div>
-        {docs.map((doc, index) => (
+        {loading && <div className="employee-doc-row"><div><strong>Loading documents…</strong></div><span>-</span><span className="doc-timing pending">-</span><span className="doc-validation pending">-</span></div>}
+        {!loading && docs.map((doc, index) => (
           <div className="employee-doc-row" key={`${doc.document_type || doc.name}-${index}`}>
             <div><strong>{doc.document_type || doc.name || `Document ${index + 1}`}</strong><small>{doc.rejection_reason || doc.correction_instructions || "-"}</small></div>
             <span>{doc.submitted_at || doc.created_at || "-"}</span>
@@ -17,14 +21,33 @@ function DocumentTable({ item }) {
             <span className={`doc-validation ${String(doc.status || "pending").toLowerCase()}`}>{doc.status || "Pending"}</span>
           </div>
         ))}
-        {!docs.length && <div className="employee-doc-row"><div><strong>No document rows returned</strong></div><span>-</span><span className="doc-timing pending">Pending</span><span className="doc-validation pending">Pending</span></div>}
+        {!loading && !docs.length && <div className="employee-doc-row"><div><strong>No documents submitted yet</strong></div><span>-</span><span className="doc-timing pending">Pending</span><span className="doc-validation pending">Pending</span></div>}
       </div>
     </div>
   );
 }
 
 export default function EmployeeView({ mode = "portal", cases = [], item: inputItem, loading = false, error = "", token = "" }) {
-  const item = inputItem || pickCase(cases);
+  const summaryItem = inputItem || pickCase(cases);
+  const [detailItem, setDetailItem] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (mode === "public" || !summaryItem?.caseId) return;
+    let cancelled = false;
+    setDetailLoading(true);
+    api.caseDetail(summaryItem.caseId).then((detail) => {
+      if (!cancelled) {
+        setDetailItem(detail);
+        setDetailLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setDetailLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [summaryItem?.caseId, mode]);
+
+  const item = mode === "public" ? summaryItem : (detailItem || summaryItem);
 
   if (mode === "public") {
     if (loading) return <div className="card" style={{ padding: 18 }}>Opening secure portal for {token || "token"}...</div>;
@@ -56,7 +79,7 @@ export default function EmployeeView({ mode = "portal", cases = [], item: inputI
           <div className="employee-info-pill"><span>Assigned HR</span><strong>{item.owner}</strong></div>
         </div>
       </div>
-      {(mode === "docs" || mode === "public" || mode === "portal") && <DocumentTable item={item} />}
+      {(mode === "docs" || mode === "public" || mode === "portal") && <DocumentTable item={item} loading={detailLoading} />}
     </div>
   );
 }

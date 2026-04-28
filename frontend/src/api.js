@@ -175,6 +175,7 @@ export const api = {
   cases: async () => normalizeCases(await get("/api/v1/cases")),
   profiles: () => get("/api/v1/profiles"),
   caseDetail: async (caseRef) => normalizeCase(await get(`/api/v1/cases/${encodeURIComponent(caseRef)}`)),
+  provisioning: (caseRef) => get(`/api/v1/provisioning/${encodeURIComponent(caseRef)}`),
   followUps: () => get("/api/v1/pre-onboarding/follow-ups"),
   preOnboardingTasks: () => get("/api/v1/pre-onboarding/tasks"),
   analytics: async () => analyticsFromCases(normalizeCases(await get("/api/v1/cases"))),

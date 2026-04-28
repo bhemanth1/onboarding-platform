@@ -1,15 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import HRDashboard from "./components/HRDashboard.jsx";
-import CasesTable from "./components/CasesTable.jsx";
-import ExceptionQueue from "./components/ExceptionQueue.jsx";
-import PreOnboardPanel from "./components/PreOnboardPanel.jsx";
-import PostOnboardPanel from "./components/PostOnboardPanel.jsx";
-import AuditPanel from "./components/AuditPanel.jsx";
-import ReportsPage from "./components/ReportsPage.jsx";
-import EmployeeView from "./components/EmployeeView.jsx";
-import ITSupportView from "./components/ITSupportView.jsx";
-import AdminView from "./components/AdminView.jsx";
 
 const ROLE_CONFIG = {
   "HR Coordinator": {
@@ -136,7 +126,6 @@ const PAGE_META = {
   overview: ["HR Coordinator - Dashboard", "Pipeline health · Active cases · Lifecycle overview"],
   cases: ["All Active Cases", "Full lifecycle view · employees"],
   preonboard: ["Pre-Onboarding Panel", "IT provisioning · Admin prep · Candidate follow-ups"],
-  "portal-public": ["Employee Status Portal", "Secure direct-link case view"],
   exceptions: ["Exception & HIL Queue", "Requires human-in-loop review"],
   post: ["Post-Onboarding", "Joining formalities · PF · Buddy assignment"],
   audit: ["Audit Log", "Append-only · All lifecycle events"],
@@ -207,20 +196,13 @@ const ICON_MAP = {
 const statusLabels = {
   completed: "Completed",
   "in-progress": "In Progress",
-  in_progress: "In Progress",
-  pending: "Pending",
-  not_started: "Not Started",
-  submitted: "Submitted",
-  validated: "Validated",
-  rejected: "Rejected",
-  sent: "Sent",
   "at-risk": "At Risk",
   blocked: "Blocked",
   hil: "Pending HIL"
 };
 
 function badge(status) {
-  return <span className={`badge ${status}`}>{statusLabels[status] || formatStatusLabel(status)}</span>;
+  return <span className={`badge ${status}`}>{statusLabels[status] || status}</span>;
 }
 
 function formatDateTime(value) {
@@ -236,67 +218,6 @@ function formatReminderType(value = "") {
     .replace("t_plus_", "T+")
     .replace(/_/g, " ")
     .toUpperCase();
-}
-
-function formatTaskType(value = "") {
-  return String(value)
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function formatStatusLabel(value = "") {
-  return String(value)
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function formatHoursLeft(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return "Unknown";
-  if (numeric <= 0) return "0h left";
-  if (numeric < 1) return `${Math.max(1, Math.round(numeric * 60))}m left`;
-  return `${numeric.toFixed(numeric >= 10 ? 0 : 1)}h left`;
-}
-
-function hoursBetween(from, to) {
-  if (!(from instanceof Date) || !(to instanceof Date)) return null;
-  const diff = (to.getTime() - from.getTime()) / 36e5;
-  if (!Number.isFinite(diff)) return null;
-  return diff;
-}
-
-function sumFollowUpStatuses(items = []) {
-  return items.reduce((acc, item) => {
-    const key = item.sent_at ? "sent" : (item.response_status || "pending").toLowerCase();
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-}
-
-function groupByCase(rows = []) {
-  return rows.reduce((acc, item) => {
-    const key = item.case_number || item.employee_id || "Unknown case";
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
-}
-
-function locationStateFromPath(pathname) {
-  const fallback = { page: ROLE_CONFIG["HR Coordinator"].defaultPage, role: "HR Coordinator", portalToken: "" };
-  if (typeof window === "undefined") return fallback;
-  const normalized = pathname.replace(/\/+$/, "") || "/";
-  if (!normalized.startsWith(ROUTE_BASE)) return fallback;
-  const route = normalized.slice(ROUTE_BASE.length) || "/hr/dashboard";
-  if (route.startsWith("/portal/")) {
-    return {
-      page: "portal-public",
-      role: "Onboarding Employee",
-      portalToken: decodeURIComponent(route.slice("/portal/".length))
-    };
-  }
-  const routeState = ROUTE_TO_STATE[route] || LEGACY_ROUTE_TO_STATE[route] || fallback;
-  return { ...routeState, portalToken: "" };
 }
 
 function PageIcon({ page }) {
@@ -327,7 +248,12 @@ function getDefaultWidgetPositions() {
 }
 
 function routeStateFromLocation() {
-  return locationStateFromPath(typeof window === "undefined" ? "/" : window.location.pathname);
+  const fallback = { page: ROLE_CONFIG["HR Coordinator"].defaultPage, role: "HR Coordinator" };
+  if (typeof window === "undefined") return fallback;
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (!pathname.startsWith(ROUTE_BASE)) return fallback;
+  const route = pathname.slice(ROUTE_BASE.length) || "/hr/dashboard";
+  return ROUTE_TO_STATE[route] || LEGACY_ROUTE_TO_STATE[route] || fallback;
 }
 
 function pageFromLocation() {
@@ -336,10 +262,6 @@ function pageFromLocation() {
 
 function roleFromLocation() {
   return routeStateFromLocation().role;
-}
-
-function portalTokenFromLocation() {
-  return routeStateFromLocation().portalToken || "";
 }
 
 function isDesktopLocation() {
@@ -353,10 +275,6 @@ function initialWindowMode() {
 }
 
 function routeForPage(page, roleName = roleForPage(page)) {
-  if (page === "portal-public") {
-    const token = portalTokenFromLocation();
-    return `${ROUTE_BASE}/portal/${encodeURIComponent(token || "token")}`;
-  }
   const roleRoutes = ROLE_PAGE_ROUTES[roleName] || {};
   const route = roleRoutes[page] || PAGE_TO_ROUTE[page] || PAGE_TO_ROUTE.overview;
   return `${ROUTE_BASE}${route}`;
@@ -368,11 +286,9 @@ function roleForPage(page) {
   )?.[0] || "HR Coordinator";
 }
 
-function syncRoute(page, roleName, replace = false, portalToken = "") {
+function syncRoute(page, roleName, replace = false) {
   if (typeof window === "undefined") return;
-  const nextPath = page === "portal-public"
-    ? `${ROUTE_BASE}/portal/${encodeURIComponent(portalToken || portalTokenFromLocation() || "token")}`
-    : routeForPage(page, roleName);
+  const nextPath = routeForPage(page, roleName);
   if (window.location.pathname === nextPath) return;
   const method = replace ? "replaceState" : "pushState";
   window.history[method]({ page, role: roleName }, "", `${nextPath}${window.location.search}`);
@@ -386,10 +302,8 @@ function syncDesktopRoute(replace = false) {
 }
 
 function App() {
-  const locationState = routeStateFromLocation();
-  const [page, setPage] = useState(locationState.page);
-  const [role, setRole] = useState(locationState.role);
-  const [portalToken, setPortalToken] = useState(locationState.portalToken || "");
+  const [page, setPage] = useState(pageFromLocation);
+  const [role, setRole] = useState(roleFromLocation);
   const [roleOpen, setRoleOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [liveOpen, setLiveOpen] = useState(true);
@@ -397,9 +311,6 @@ function App() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [widgetPositions, setWidgetPositions] = useState(getDefaultWidgetPositions);
   const [data, setData] = useState(null);
-  const [portalCase, setPortalCase] = useState(null);
-  const [portalLoading, setPortalLoading] = useState(Boolean(locationState.portalToken));
-  const [portalError, setPortalError] = useState("");
   const [selectedCase, setSelectedCase] = useState(null);
   const [embeddedApp, setEmbeddedApp] = useState(null);
   const [error, setError] = useState("");
@@ -425,37 +336,6 @@ function App() {
       clearInterval(poll);
     };
   }, []);
-
-  useEffect(() => {
-    let ignore = false;
-    async function loadPortalCase() {
-      if (!portalToken) {
-        setPortalCase(null);
-        setPortalError("");
-        setPortalLoading(false);
-        return;
-      }
-      setPortalLoading(true);
-      try {
-        const next = await api.caseDetail(portalToken);
-        if (!ignore) {
-          setPortalCase(next);
-          setPortalError("");
-        }
-      } catch (err) {
-        if (!ignore) {
-          setPortalCase(null);
-          setPortalError(err.message);
-        }
-      } finally {
-        if (!ignore) setPortalLoading(false);
-      }
-    }
-    loadPortalCase();
-    return () => {
-      ignore = true;
-    };
-  }, [portalToken]);
 
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 1000);
@@ -490,7 +370,6 @@ function App() {
       const nextState = routeStateFromLocation();
       setPage(nextState.page);
       setRole(nextState.role);
-      setPortalToken(nextState.portalToken || "");
       setWindowMode(isDesktopLocation() ? "minimized" : "open");
       setNavOpen(false);
       setRoleOpen(false);
@@ -503,7 +382,6 @@ function App() {
   const cases = data?.cases || [];
   const audit = data?.audit || [];
   const profiles = data?.profiles || [];
-  const preOnboardingTasks = data?.preOnboardingTasks || [];
   const roleConfigs = useMemo(() => buildRoleConfigs(profiles, cases), [profiles, cases]);
   const currentRole = roleConfigs[role] || ROLE_CONFIG[role];
   const meta = PAGE_META[page] || [page, ""];
@@ -519,7 +397,6 @@ function App() {
     setRole(nextRole);
     const nextPage = roleConfigs[nextRole].defaultPage;
     setPage(nextPage);
-    setPortalToken("");
     syncRoute(nextPage, nextRole);
     setRoleOpen(false);
     setNavOpen(false);
@@ -625,8 +502,8 @@ function App() {
                 <div className="win-content">
                   <main className="win-main">
                     {error && <div className="card" style={{ padding: 14, color: "var(--error)" }}>Backend unavailable: {error}</div>}
-                    {!data && !error && <LoadingShell />}
-                    {data && <PageRenderer page={page} data={data} cases={cases} metrics={metrics} audit={audit} openCase={openCaseDetail} setPage={setPage} portalCase={portalCase} portalToken={portalToken} portalLoading={portalLoading} portalError={portalError} preOnboardingTasks={preOnboardingTasks} />}
+                    {!data && !error && <div className="card" style={{ padding: 18 }}>Loading dashboard...</div>}
+                    {data && <PageRenderer page={page} data={data} cases={cases} metrics={metrics} audit={audit} openCase={openCaseDetail} setPage={setPage} />}
                   </main>
                 </div>
               </div>
@@ -670,27 +547,26 @@ function initialsFromDisplayName(name, fallback = "NJ") {
   return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
-function PageRenderer({ page, data, cases, metrics, audit, openCase, setPage, portalCase, portalToken, portalLoading, portalError }) {
-  if (page === "overview") return <HRDashboard metrics={metrics} cases={cases} audit={audit} onViewAllCases={() => setPage("cases")} onOpenCase={openCase} />;
-  if (page === "cases") return <CasesTable cases={cases} onOpenCase={openCase} />;
-  if (page === "preonboard") return <PreOnboardPanel tasks={data.preOnboardingTasks || []} followUps={data.followUps || []} />;
-  if (page === "portal-public") return <EmployeeView mode="public" item={portalCase} token={portalToken} loading={portalLoading} error={portalError} />;
-  if (page === "exceptions") return <ExceptionQueue cases={cases} gates={data.hil_gates} />;
-  if (page === "post") return <PostOnboardPanel cases={cases} />;
-  if (page === "audit") return <AuditPanel audit={audit} />;
-  if (page === "reports") return <ReportsPage analytics={data.analytics} />;
+function PageRenderer({ page, data, cases, metrics, audit, openCase, setPage }) {
+  if (page === "overview") return <Overview metrics={metrics} cases={cases} audit={audit} setPage={setPage} openCase={openCase} />;
+  if (page === "cases") return <Cases cases={cases} openCase={openCase} />;
+  if (page === "preonboard") return <PreOnboard cases={cases} followUps={data.followUps || []} />;
+  if (page === "exceptions") return <Exceptions cases={cases} gates={data.hil_gates} />;
+  if (page === "post") return <PostOnboard cases={cases} />;
+  if (page === "audit") return <Audit audit={audit} />;
+  if (page === "reports") return <Analytics analytics={data.analytics} />;
   if (page === "ops-dashboard") return <OpsDashboard metrics={metrics} cases={cases} gates={data.hil_gates} />;
   if (page === "hil-approvals") return <HilApprovals gates={data.hil_gates} cases={cases} />;
-  if (page === "sla") return <SlaMonitor cases={cases} gates={data.hil_gates} />;
-  if (page === "emp-portal") return <EmployeeView mode="portal" cases={cases} />;
-  if (page === "emp-docs") return <EmployeeView mode="docs" cases={cases} />;
-  if (page === "it-queue") return <ITSupportView mode="queue" cases={cases} />;
-  if (page === "it-active") return <ITSupportView mode="active" cases={cases} />;
-  if (page === "it-done") return <ITSupportView mode="done" cases={cases} />;
-  if (page === "admin-tasks") return <AdminView mode="tasks" cases={cases} />;
-  if (page === "admin-desk") return <AdminView mode="desk" cases={cases} />;
-  if (page === "admin-id") return <AdminView mode="id" cases={cases} />;
-  return <HRDashboard metrics={metrics} cases={cases} audit={audit} onViewAllCases={() => setPage("cases")} onOpenCase={openCase} />;
+  if (page === "sla") return <SlaMonitor cases={cases} />;
+  if (page === "emp-portal") return <EmployeePortal cases={cases} />;
+  if (page === "emp-docs") return <EmployeeDocs cases={cases} />;
+  if (page === "it-queue") return <ItQueue cases={cases} />;
+  if (page === "it-active") return <ItActive cases={cases} />;
+  if (page === "it-done") return <ItDone cases={cases} />;
+  if (page === "admin-tasks") return <AdminTasks cases={cases} />;
+  if (page === "admin-desk") return <AdminDesk cases={cases} />;
+  if (page === "admin-id") return <AdminId cases={cases} />;
+  return <Overview metrics={metrics} cases={cases} audit={audit} setPage={setPage} openCase={openCase} />;
 }
 
 function Titlebar({ role, roleConfig, onRoleClick, onClose, onMinimize, onMaximize, isMaximized }) {
@@ -950,11 +826,18 @@ function Overview({ metrics, cases, audit, setPage, openCase }) {
       <div className="g2">
         <div className="card">
           <div className="card-head">
-            <div><div className="card-title">Active Pipeline</div><div className="card-sub">Realtime GET polling · backend case data</div></div>
+            <div><div className="card-title">Active Pipeline</div><div className="card-sub">{cases.length} employees · click any row to open full case</div></div>
             <button className="btn btn-ghost btn-sm" onClick={() => setPage("cases")}>View All →</button>
           </div>
-          <div style={{ padding: 0, maxHeight: 340, overflowY: "auto" }}>
-            {cases.slice(0, 8).map((item) => <CompactCase key={item.caseId} item={item} openCase={openCase} />)}
+          <div className="compact-case-header">
+            <span />
+            <span>Employee</span>
+            <span>Phase</span>
+            <span>Status</span>
+            <span>Progress</span>
+          </div>
+          <div style={{ padding: 0, maxHeight: 380, overflowY: "auto" }}>
+            {cases.slice(0, 10).map((item) => <CompactCase key={item.caseId} item={item} openCase={openCase} />)}
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -973,14 +856,18 @@ function Kpi({ color, label, value, meta }) {
 function CompactCase({ item, openCase }) {
   const progressColor = item.st === "completed" ? "var(--success)" : item.st === "at-risk" || item.st === "blocked" ? "var(--warning)" : "var(--primary)";
   return (
-    <div onClick={() => openCase?.(item)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "1px solid var(--n8)", cursor: openCase ? "pointer" : "default" }}>
-      <div className="emp-av" style={{ background: item.col, width: 28, height: 28, fontSize: 9, flexShrink: 0 }}>{item.ini}</div>
-      <div style={{ minWidth: 0, flex: 1.4 }}><div className="emp-name" style={{ fontSize: 11.5 }}>{item.name}</div><div style={{ fontSize: 9.5, color: "var(--n5)" }}>{item.role}</div></div>
-      <span className={`tag ${phaseTagClass(item.phase)}`} style={{ fontSize: 9, flexShrink: 0 }}>{item.phase}</span>
-      <div style={{ flexShrink: 0 }}>{badge(item.st)}</div>
-      <div style={{ minWidth: 80, flexShrink: 0 }}>
-        <div style={{ height: 4, background: "var(--n7)", borderRadius: 2, overflow: "hidden", marginBottom: 2 }}><div style={{ height: "100%", width: `${item.prog}%`, background: progressColor, borderRadius: 2 }} /></div>
-        <div style={{ fontSize: 9.5, color: "var(--n5)" }}>{item.prog}%</div>
+    <div onClick={() => openCase?.(item)} className="compact-case-row">
+      <div className="emp-av" style={{ background: item.col, width: 34, height: 34, fontSize: 11, flexShrink: 0 }}>{item.ini}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--n0)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.3 }}>{item.name}</div>
+        <div style={{ fontSize: 11, color: "var(--n4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{item.role} · {item.dept}</div>
+        <div style={{ fontSize: 10, color: "var(--primary)", fontWeight: 500, marginTop: 1 }}>Joining {item.join}</div>
+      </div>
+      <span className={`tag ${phaseTagClass(item.phase)}`} style={{ fontSize: 9.5, justifySelf: "start" }}>{item.phase}</span>
+      <div style={{ justifySelf: "start" }}>{badge(item.st)}</div>
+      <div>
+        <div style={{ height: 4, background: "var(--n7)", borderRadius: 2, overflow: "hidden", marginBottom: 3 }}><div style={{ height: "100%", width: `${item.prog}%`, background: progressColor, borderRadius: 2 }} /></div>
+        <div style={{ fontSize: 10, color: "var(--n4)", fontWeight: 500 }}>{item.prog}%</div>
       </div>
     </div>
   );
@@ -1008,10 +895,12 @@ function RecentActivity({ audit }) {
   );
 }
 
+const CASE_ROW_COLS = "1.8fr 1.4fr 130px 110px 65px 110px 110px";
+
 function Cases({ cases, openCase }) {
   return (
     <div className="card">
-      <div className="card-head"><div><div className="card-title">All Active Cases</div><div className="card-sub">Read-only data fetched from backend GET endpoints</div></div></div>
+      <div className="card-head"><div><div className="card-title">All Active Cases</div><div className="card-sub">{cases.length} employees · click any row for full case detail</div></div></div>
       <div className="react-table-header"><span>Employee</span><span>Owner</span><span>Phase</span><span>Status</span><span>Progress</span><span>IT</span><span>Docs</span></div>
       {cases.map((item) => <CaseRow key={item.caseId} item={item} openCase={openCase} />)}
     </div>
@@ -1020,85 +909,122 @@ function Cases({ cases, openCase }) {
 
 function CaseRow({ item, openCase }) {
   return (
-    <div onClick={() => openCase?.(item)} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.25fr 1.1fr 1fr 80px 80px 90px", columnGap: 10, alignItems: "center", padding: "9px 14px", borderBottom: "1px solid var(--n8)", cursor: openCase ? "pointer" : "default" }}>
-      <div className="emp"><div className="emp-av" style={{ background: item.col }}>{item.ini}</div><div><div className="emp-name">{item.name}</div><div className="emp-role">{item.dept} · {item.caseId}</div></div></div>
-      <div style={{ fontSize: 10.5, color: "var(--n3)" }}>{item.owner}</div>
-      <span className={`tag ${phaseTagClass(item.phase)}`}>{item.phase}</span>
+    <div onClick={() => openCase?.(item)} style={{ display: "grid", gridTemplateColumns: CASE_ROW_COLS, columnGap: 10, alignItems: "center", padding: "9px 14px", borderBottom: "1px solid var(--n8)", cursor: openCase ? "pointer" : "default", transition: "background .1s" }} onMouseEnter={(e) => e.currentTarget.style.background = "var(--n8)"} onMouseLeave={(e) => e.currentTarget.style.background = ""}>
+      <div className="emp"><div className="emp-av" style={{ background: item.col }}>{item.ini}</div><div style={{ minWidth: 0, overflow: "hidden", flex: 1 }}><div className="emp-name">{item.name}</div><div className="emp-role">{item.dept} · {item.caseId}</div></div></div>
+      <div style={{ fontSize: 10.5, color: "var(--n3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.owner}</div>
+      <div><span className={`tag ${phaseTagClass(item.phase)}`}>{item.phase}</span></div>
       <div>{badge(item.st)}</div>
-      <div style={{ fontSize: 11, color: "var(--n3)" }}>{item.prog}%</div>
-      <div style={{ fontSize: 11, color: "var(--n3)" }}>{item.it}</div>
-      <div style={{ fontSize: 11, color: "var(--n3)" }}>{item.docs}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--n2)" }}>{item.prog}%</div>
+      <div style={{ fontSize: 11, color: "var(--n3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.it}</div>
+      <div style={{ fontSize: 11, color: "var(--n3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.docs}</div>
     </div>
   );
 }
 
-function PreOnboard({ tasks = [], followUps = [] }) {
-  const taskCounts = tasks.reduce((acc, task) => {
-    const team = task.assigned_team || "other";
-    acc[team] = (acc[team] || 0) + 1;
-    return acc;
-  }, {});
+function PreOnboard({ cases, followUps }) {
+  const rows       = cases.filter((item) => item.phase === "Pre-Onboarding");
+  const docsReady  = rows.filter((item) => item.docs === "Verified" || item.docs === "HR Approved").length;
+  const itDone     = rows.filter((item) => item.it  === "Completed").length;
+  const pending    = followUps.filter((x) => !x.sent_at).length;
   return (
-    <div className="g2">
-      <div className="card">
-        <div className="card-head">
-          <div><div className="card-title">Pre-Onboarding Task Panel</div><div className="card-sub">IT provisioning · Admin prep · Candidate follow-ups</div></div>
-          <span className="tag purple">{tasks.length} Tasks</span>
-        </div>
-        <div className="kpi-grid g3" style={{ padding: "0 14px 14px" }}>
-          <Kpi color="blue" label="IT Tasks" value={taskCounts.it || 0} meta="Laptop and email setup" />
-          <Kpi color="orange" label="Admin Tasks" value={taskCounts.admin || 0} meta="Desk and ID card prep" />
-          <Kpi color="green" label="Follow-Ups" value={followUps.length} meta="Reminder records" />
-        </div>
-        <div className="pre-task-table">
-          <div className="pre-task-head"><span>Task</span><span>Case</span><span>Team</span><span>Status</span><span>Due</span><span>SLA</span></div>
-          {!tasks.length && <div className="pre-task-row"><strong>No task rows returned</strong><span>Waiting for backend task records</span><span>-</span><span className="badge pending">Pending</span><span>-</span><span>-</span></div>}
-          {tasks.map((task) => (
-            <div className="pre-task-row" key={task.id || `${task.case_number}-${task.task_type}`}>
-              <strong>{formatTaskType(task.task_type)}</strong>
-              <span>{task.case_number || task.employee_id || "-"}</span>
-              <span>{formatStatusLabel(task.assigned_team)}</span>
-              <span><span className="pre-task-badge">{badge(task.status)}</span></span>
-              <span>{formatDateTime(task.due_date)}</span>
-              <span>{task.sla_compliant === false ? "At risk" : "On track"}</span>
-            </div>
-          ))}
-        </div>
+    <>
+      <div className="kpi-grid g3">
+        <Kpi color="purple" label="Pre-Onboarding Active"  value={rows.length}  meta="Candidates in pre-boarding" />
+        <Kpi color="orange" label="Documents Pending"      value={rows.length - docsReady} meta={`${docsReady} verified`} />
+        <Kpi color="blue"   label="IT Setup Pending"       value={rows.length - itDone}    meta={`${itDone} provisioned`} />
       </div>
-      <ReminderPanel followUps={followUps} />
-    </div>
+      <div className="preonboard-layout">
+        <div className="card">
+          <div className="card-head">
+            <div><div className="card-title">Pre-Onboarding Task Panel</div><div className="card-sub">IT provisioning · Admin prep · Candidate follow-ups</div></div>
+            <span className="tag purple">{rows.length} Active</span>
+          </div>
+          <TaskGrid columns={[
+            ["Candidate Follow-up", rows.filter((item) => item.docs !== "Verified" && item.docs !== "HR Approved")],
+            ["IT Provisioning",     rows.filter((item) => item.it  !== "Completed")],
+            ["Admin Prep",          rows],
+          ]} />
+        </div>
+        <ReminderPanel followUps={followUps} cases={cases} />
+      </div>
+    </>
   );
 }
 
-function ReminderPanel({ followUps = [] }) {
-  const grouped = Object.entries(groupByCase(followUps)).map(([caseNumber, rows]) => ({
-    caseNumber,
-    rows: rows.slice().sort((a, b) => new Date(a.scheduled_at || 0) - new Date(b.scheduled_at || 0)),
-    counts: sumFollowUpStatuses(rows)
-  }));
+const REM_TYPE = {
+  t_minus_7: { label: "7-day reminder", sub: "7 days before joining", color: "#5929D0" },
+  t_minus_3: { label: "3-day reminder", sub: "3 days before joining", color: "#E4902E" },
+  t_plus_0:  { label: "Welcome email",  sub: "On joining day",        color: "#10B981" },
+};
+
+function ReminderPanel({ followUps = [], cases = [] }) {
+  const lookup = {};
+  for (const c of cases) {
+    if (c.caseId)      lookup[c.caseId]      = c;
+    if (c.employee_id) lookup[c.employee_id] = c;
+  }
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd   = new Date(todayStart.getTime() + 86_400_000);
+
+  const enriched = followUps.map((fu) => {
+    const caseData     = lookup[fu.case_number] || lookup[fu.employee_id] || {};
+    const scheduledDate = fu.scheduled_at ? new Date(fu.scheduled_at) : null;
+    const isSent       = Boolean(fu.sent_at);
+    const isOverdue    = !isSent && scheduledDate && scheduledDate < todayStart;
+    const isToday      = !isSent && scheduledDate && scheduledDate >= todayStart && scheduledDate < todayEnd;
+    return { ...fu, caseData, scheduledDate, isSent, isOverdue, isToday };
+  });
+
+  const groups = [
+    { key: "overdue",  label: "Overdue",  tone: "overdue",  items: enriched.filter((x) => x.isOverdue) },
+    { key: "today",    label: "Today",    tone: "today",    items: enriched.filter((x) => x.isToday) },
+    { key: "upcoming", label: "Upcoming", tone: "upcoming", items: enriched.filter((x) => !x.isSent && !x.isOverdue && !x.isToday) },
+    { key: "sent",     label: "Sent",     tone: "sent",     items: enriched.filter((x) => x.isSent) },
+  ].filter((g) => g.items.length > 0);
+
+  const pending = followUps.filter((x) => !x.sent_at).length;
+
   return (
-    <div className="card">
+    <div className="card rem-card">
       <div className="card-head">
-        <div><div className="card-title">Reminders</div><div className="card-sub">Scheduled follow-ups from backend records</div></div>
-        <span className="tag orange">{followUps.filter((item) => !item.sent_at).length} Pending</span>
+        <div><div className="card-title">Reminders</div><div className="card-sub">Scheduled candidate follow-up emails</div></div>
+        {pending > 0 && <span className="tag orange">{pending} Pending</span>}
       </div>
-      <div className="reminder-list">
-        {!grouped.length && <div className="reminder-row"><strong>No reminders returned</strong><span>Waiting for follow-up records</span></div>}
-        {grouped.map((group) => {
-          const latest = group.rows[0];
-          return (
-            <div className="reminder-row reminder-group" key={group.caseNumber}>
-              <strong>{group.caseNumber} · {group.counts.sent || 0} sent · {group.counts.pending || 0} pending</strong>
-              <span>{formatDateTime(latest?.scheduled_at)} · {formatReminderType(latest?.follow_up_type)}</span>
-              <span className="reminder-chips">
-                <span className="tag purple">Scheduled {group.rows.length}</span>
-                <span className="tag green">Sent {group.counts.sent || 0}</span>
-                <span className="tag orange">Pending {group.counts.pending || 0}</span>
-              </span>
-              <span className="reminder-sub">{group.rows.map((item) => `${formatReminderType(item.follow_up_type)}: ${item.sent_at ? "Sent" : item.response_status || "Pending"}`).join(" · ")}</span>
-            </div>
-          );
-        })}
+      <div className="rem-scroll">
+      {!followUps.length && <div className="rem-empty">No follow-up records yet.</div>}
+      {groups.map((group, gi) => (
+        <div key={group.key}>
+          <div className={`rem-group-label rem-tone-${group.tone} ${gi === 0 ? "rem-first-group" : ""}`}>
+            <span>{group.label}</span>
+            <span className="rem-group-count">{group.items.length}</span>
+          </div>
+          {group.items.map((item) => {
+            const cfg  = REM_TYPE[item.follow_up_type] || { label: item.follow_up_type || "Follow-up", sub: "", color: "#888" };
+            const name = item.caseData?.name || item.case_number || item.employee_id || "—";
+            const role = [item.caseData?.role, item.caseData?.dept].filter(Boolean).join(" · ");
+            const dateStr = item.scheduledDate
+              ? item.scheduledDate.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+              : "—";
+            const rightLabel = item.isSent ? "Sent" : item.isOverdue ? "Overdue" : item.isToday ? "Today" : dateStr;
+            const rightTone  = item.isOverdue ? "overdue" : item.isToday ? "today" : item.isSent ? "sent" : "";
+            return (
+              <div className="rem-item" key={item.id}>
+                <div className={`rem-dot ${item.isSent ? "rem-dot-done" : "rem-dot-pending"}`}
+                     style={{ "--rem-color": cfg.color }}>
+                  {item.isSent && "✓"}
+                </div>
+                <div className="rem-body">
+                  <div className={`rem-name ${item.isSent ? "rem-name-done" : ""}`}>{name}</div>
+                  <div className="rem-meta">{cfg.label}{role ? ` · ${role}` : ""}</div>
+                </div>
+                <div className={`rem-right ${rightTone}`}>{rightLabel}</div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
       </div>
     </div>
   );
@@ -1123,7 +1049,74 @@ function Exceptions({ cases, gates }) {
 }
 
 function PostOnboard({ cases }) {
-  return <Board title="Post-Onboarding Checklist" subtitle="Joining formalities · PF · Buddy assignment" rows={cases.filter((item) => item.phase === "Post-Onboarding" || item.phase === "Completed")} />;
+  const rows = cases.filter((item) => item.phase === "Post-Onboarding" || item.phase === "Completed" || item.st === "completed");
+  const completed = rows.filter((item) => item.st === "completed" || item.isCompleted);
+  const totalItems = rows.length * 6;
+  const doneItems = rows.reduce((sum, item) => sum + [item.pfConfirmed, item.payrollConfirmed, item.welcomeEmailSent, item.buddyAssigned, item.policyAcknowledged, item.managerCheckin].filter(Boolean).length, 0);
+
+  return (
+    <>
+      <div className="kpi-grid g3">
+        <Kpi color="blue" label="Post-Onboarding Cases" value={rows.length} meta="In final stage" />
+        <Kpi color="green" label="Fully Completed" value={completed.length} meta="All checklist items done" />
+        <Kpi color="orange" label="Checklist Progress" value={totalItems ? `${Math.round((doneItems / totalItems) * 100)}%` : "0%"} meta={`${doneItems} / ${totalItems} items done`} />
+      </div>
+      <div className="card">
+        <div className="card-head">
+          <div><div className="card-title">Post-Onboarding Tracker</div><div className="card-sub">PF · Payroll · Welcome email · Buddy · Policy · Manager check-in · HR approval</div></div>
+          <span className="tag orange">{rows.length - completed.length} Pending</span>
+        </div>
+        {!rows.length && <div style={{ padding: "18px 16px", color: "var(--n5)", fontSize: 12 }}>No employees in post-onboarding phase yet.</div>}
+        {rows.map((item) => <PostOnboardCard key={item.caseId} item={item} />)}
+      </div>
+    </>
+  );
+}
+
+function PostOnboardCard({ item }) {
+  const hrApproved = item.st === "completed" || item.isCompleted || (item.backgroundVerification === "approved" && item.prog >= 90);
+  const checklist = [
+    { label: "PF Form Submitted",     done: item.pfConfirmed,         icon: "PF" },
+    { label: "Payroll Configured",    done: item.payrollConfirmed,    icon: "₹"  },
+    { label: "Welcome Email Sent",    done: item.welcomeEmailSent,    icon: "✉"  },
+    { label: "Buddy Assigned",        done: item.buddyAssigned,       icon: "👥" },
+    { label: "Policy Acknowledged",   done: item.policyAcknowledged,  icon: "📋" },
+    { label: "Manager Check-in",      done: item.managerCheckin,      icon: "👤" },
+    { label: "HR Final Approval",     done: hrApproved,               icon: "✓"  },
+  ];
+  const doneCount = checklist.filter((c) => c.done).length;
+  const progressPct = Math.round((doneCount / checklist.length) * 100);
+  const progressColor = item.st === "completed" ? "var(--success)" : item.st === "at-risk" ? "var(--warning)" : "var(--primary)";
+
+  return (
+    <div className="post-onboard-card">
+      <div className="post-onboard-header">
+        <div className="emp-av" style={{ background: item.col, width: 34, height: 34, fontSize: 11, flexShrink: 0 }}>{item.ini}</div>
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <div className="emp-name">{item.name}</div>
+          <div className="emp-role">{item.role} · {item.dept} · {item.caseId}</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <span className={`tag ${phaseTagClass(item.phase)}`}>{item.phase}</span>
+          {badge(item.st)}
+          {item.completedAt && <span className="post-onboard-complete-date">Completed {item.completedAt.slice(0, 10)}</span>}
+        </div>
+      </div>
+      <div className="post-onboard-progress-row">
+        <div className="post-onboard-progress-bar"><div style={{ width: `${progressPct}%`, background: progressColor }} /></div>
+        <span className="post-onboard-progress-label">{doneCount}/{checklist.length} items · {progressPct}%</span>
+      </div>
+      <div className="post-onboard-checklist">
+        {checklist.map(({ label, done, icon }) => (
+          <div key={label} className={`post-onboard-item ${done ? "done" : "pending"}`}>
+            <span className="post-onboard-item-icon">{done ? "✓" : icon}</span>
+            <span className="post-onboard-item-label">{label}</span>
+            <span className={`post-onboard-item-status ${done ? "done" : "pending"}`}>{done ? "Done" : "Pending"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Board({ title, subtitle, rows }) {
@@ -1151,23 +1144,33 @@ function TaskGrid({ columns }) {
 
 function ExceptionItem({ item }) {
   const tag = item.st === "blocked" ? "blocker" : item.st === "hil" ? "hil" : "high";
+  const actionLabel = item.st === "blocked" ? "Intervention Required" : item.st === "hil" ? "Awaiting HR Decision" : "SLA Watch";
   return (
     <div className="exc">
       <div className="exc-head"><span className={`exc-tag ${tag}`}>{tag}</span><span className="exc-emp">{item.name}</span></div>
       <div className="exc-type">{item.scenario}</div>
-      <div className="exc-desc">{item.caseId} · {item.phase} · {item.docs} · {item.it}</div>
-      <div className="exc-actions"><button className="btn-sys">Live status</button>{badge(item.st)}</div>
+      <div className="exc-desc">{item.caseId} · {item.phase} · Docs: {item.docs} · IT: {item.it}</div>
+      <div className="exc-actions">
+        <span className="btn-sys">Assigned: {item.owner}</span>
+        <span className="btn-sys">{actionLabel}</span>
+        {badge(item.st)}
+      </div>
     </div>
   );
 }
 
 function GateException({ gate }) {
+  const gateLabel = (gate.gate_type || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const sentTo = gate.email_sent_to || "HR Approver";
   return (
     <div className="exc">
       <div className="exc-head"><span className="exc-tag hil">HIL</span><span className="exc-emp">{gate.candidate_name}</span></div>
-      <div className="exc-type">{gate.gate_type}</div>
-      <div className="exc-desc">{gate.case_number} approval status: {gate.decision}. Frontend polling updates this row when HR approves or rejects.</div>
-      <div className="exc-actions"><button className="btn-sys">{gate.email_sent_to || "HR approver"}</button><span className="badge hil">Pending HIL</span></div>
+      <div className="exc-type">{gateLabel}</div>
+      <div className="exc-desc">{gate.case_number} · Decision: {gate.decision} · Approval request sent to: {sentTo}</div>
+      <div className="exc-actions">
+        <span className="btn-sys">Awaiting HR Approval</span>
+        <span className="badge hil">Pending HIL</span>
+      </div>
     </div>
   );
 }
@@ -1194,94 +1197,138 @@ function HilApprovals({ gates, compact = false }) {
   );
 }
 
-function SlaMonitor({ cases, gates = [] }) {
-  const pendingCases = cases.filter((item) => item.st === "hil");
-  const gateByCase = new Map(gates.filter((gate) => gate.decision === "pending").map((gate) => [gate.case_number, gate]));
-  const onTrack = cases.filter((x) => x.slaLabel === "On Track").length;
-  const atRisk = cases.filter((x) => x.st === "at-risk").length;
-  const breached = cases.filter((x) => x.st === "blocked").length;
+function SlaMonitor({ cases }) {
   return (
     <>
-      <div className="kpi-grid g3"><Kpi color="green" label="On Track" value={onTrack} meta="Within SLA" /><Kpi color="orange" label="At Risk" value={atRisk} meta="Within breach window" /><Kpi color="red" label="Breached" value={breached} meta="Escalation required" /></div>
-      <div className="card">
-        <div className="card-head">
-          <div><div className="card-title">SLA Tracking - Pending HIL</div><div className="card-sub">Deadline and escalation overview</div></div>
-          <span className="tag pink">{pendingCases.length} Reviewing</span>
-        </div>
-        <div className="sla-list">
-          {!pendingCases.length && <div className="sla-row"><strong>No pending HIL cases</strong><span>SLA countdown will appear here once a case enters review</span></div>}
-          {pendingCases.map((item) => {
-            const gate = gateByCase.get(item.caseId);
-            const hoursLeft = gate?.token_expires_at ? hoursBetween(new Date(), new Date(gate.token_expires_at)) : null;
-            const reviewStart = gate?.email_sent_at ? new Date(gate.email_sent_at) : null;
-            return (
-              <div className="sla-row" key={item.caseId}>
-                <strong>{item.name} · {item.caseId}</strong>
-                <span>{item.owner} · {item.dept} · {item.prog}% complete</span>
-                <span className={`sla-pill ${hoursLeft !== null && hoursLeft <= 1 ? "late" : "watch"}`}>Time in review: {hoursLeft === null ? "Unknown" : formatHoursLeft(hoursLeft)}</span>
-                <span className="sla-sub">{reviewStart ? `Review started ${formatDateTime(reviewStart.toISOString())}` : "Review timing derived from gate expiration"}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <div className="kpi-grid g3"><Kpi color="green" label="On Track" value={cases.filter((x) => x.slaLabel === "On Track").length} meta="Within SLA" /><Kpi color="orange" label="At Risk" value={cases.filter((x) => x.st === "at-risk").length} meta="Within breach window" /><Kpi color="red" label="Breached" value={cases.filter((x) => x.st === "blocked").length} meta="Escalation required" /></div>
       <Board title="SLA Tracking - All Cases" subtitle="Deadline and escalation overview" rows={cases} />
     </>
   );
 }
 
-function EmployeePortal({ cases, item: providedItem }) {
-  const item = providedItem || pickEmployeeCase(cases);
+function EmployeePortal({ cases }) {
+  const summaryItem = pickEmployeeCase(cases);
+  const [detailItem, setDetailItem] = useState(null);
+  const [provisioningItems, setProvisioningItems] = useState([]);
+  useEffect(() => {
+    if (!summaryItem?.caseId) return;
+    let cancelled = false;
+    api.caseDetail(summaryItem.caseId).then((d) => { if (!cancelled) setDetailItem(d); }).catch(() => {});
+    api.provisioning(summaryItem.caseId).then((d) => { if (!cancelled) setProvisioningItems(d || []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [summaryItem?.caseId]);
+  const item = detailItem || summaryItem;
   return (
     <div className="employee-portal">
       <EmployeeHero item={item} />
       <div className="employee-grid">
         <EmployeeJourney item={item} />
-        <EmployeeStatusPanel item={item} />
+        <EmployeeActionPanel item={item} />
       </div>
-      <EmployeeReadOnlyCards item={item} />
+      <div className="employee-bottom-grid">
+        <EmployeeDocsSummaryCard item={item} />
+        <EmployeeITSetupCard provisioningItems={provisioningItems} itStatus={item?.it} />
+        <EmployeeKeyContactsCard item={item} />
+      </div>
     </div>
   );
 }
 
-function EmployeeDocs({ cases }) {
-  const item = pickEmployeeCase(cases);
-  return <div className="employee-portal"><EmployeeHero item={item} compact /><EmployeeReadOnlyCards item={item} focus="docs" /></div>;
-}
+const REQUIRED_DOCS = [
+  { id: "aadhaar", label: "Aadhaar Card", desc: "Government-issued ID — front and back scan" },
+  { id: "pan", label: "PAN Card", desc: "Mandatory for payroll and tax setup" },
+  { id: "passport_photo", label: "Passport-size Photo", desc: "Recent white-background photo" },
+  { id: "educational", label: "Educational Certificates", desc: "Highest qualification marksheet and degree" },
+  { id: "previous_employment", label: "Previous Employment Letters", desc: "Offer letter / relieving letter from last employer" },
+  { id: "bank_details", label: "Cancelled Cheque / Bank Details", desc: "Required for salary disbursement" },
+];
 
-function PublicPortal({ item, token, loading, error }) {
-  if (loading) {
-    return <LoadingShell title="Opening secure portal" subtitle={token ? `Looking up ${token}` : "Fetching your case"} />;
-  }
-  if (error) {
-    return <div className="card" style={{ padding: 20 }}><div className="card-title">Portal unavailable</div><div className="card-sub">{error}</div></div>;
-  }
-  if (!item || !item.caseId) {
-    return <div className="card" style={{ padding: 20 }}><div className="card-title">Case not found</div><div className="card-sub">No onboarding case matched this portal token.</div></div>;
-  }
+function EmployeeDocs({ cases }) {
+  const summaryItem = pickEmployeeCase(cases);
+  const [detailItem, setDetailItem] = useState(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!summaryItem?.caseId) return;
+    let cancelled = false;
+    setLoading(true);
+    api.caseDetail(summaryItem.caseId).then((d) => { if (!cancelled) { setDetailItem(d); setLoading(false); } }).catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [summaryItem?.caseId]);
+  const item = detailItem || summaryItem;
+  const docs = getDocumentSubmissions(item);
+  const validated = docs.filter((d) => ["Validated", "Approved", "Verified"].includes(d.status)).length;
+  const rejected = docs.filter((d) => d.status === "Rejected").length;
+  const pending = docs.length - validated - rejected;
+  const hasPending = rejected > 0 || pending > 0;
+  const submittedTypes = new Set(docs.map((d) => String(d.name).toLowerCase().replace(/\s+/g, "_")));
   return (
     <div className="employee-portal">
-      <div className="card" style={{ padding: 16 }}>
-        <div className="card-head" style={{ padding: 0, marginBottom: 12 }}>
-          <div>
-            <div className="card-title">Secure Employee Portal</div>
-            <div className="card-sub">Read-only case status, document state, and onboarding progress</div>
+      <EmployeeHero item={item} compact />
+      <div className="kpi-grid g3">
+        <Kpi color="blue" label="Total Submitted" value={docs.length || "0"} meta="Documents sent for review" />
+        <Kpi color="green" label="Validated" value={validated} meta="HR approved and complete" />
+        <Kpi color="orange" label="Needs Attention" value={`${pending + rejected}`} meta={`${pending} pending · ${rejected} rejected`} />
+      </div>
+      {rejected > 0 && (
+        <div className="ep-docs-banner ep-docs-banner-bad">
+          <strong>Action Required:</strong> {rejected} document{rejected > 1 ? "s" : ""} {rejected > 1 ? "were" : "was"} rejected by HR. Please re-submit the corrected version — see the feedback in the table below.
+        </div>
+      )}
+      {!docs.length && (
+        <div className="ep-docs-banner ep-docs-banner-info">
+          <strong>Getting started:</strong> Please submit the required documents listed below. Contact your HR Coordinator ({item?.owner || "HR Team"}) for the submission link.
+        </div>
+      )}
+      <div className="ep-docs-grid">
+        <div className="card employee-doc-card">
+          <div className="card-head">
+            <div><div className="card-title">My Submitted Documents</div><div className="card-sub">Validation status and HR feedback</div></div>
+            <span className="tag purple">{validated}/{docs.length || 0} Validated</span>
           </div>
-          <span className="tag purple">{item.caseId}</span>
+          {loading && <div style={{ padding: "16px", color: "var(--n5)", fontSize: 12 }}>Loading documents…</div>}
+          {!loading && (
+            <div className="employee-doc-table">
+              <div className="employee-doc-head"><span>Document</span><span>Submitted</span><span>Status</span><span>HR Feedback</span></div>
+              {!docs.length && (
+                <div className="employee-doc-row" style={{ gridTemplateColumns: "1fr" }}>
+                  <div style={{ padding: "8px 0" }}><strong>No documents submitted yet</strong><small>Submit your documents to begin the validation process</small></div>
+                </div>
+              )}
+              {docs.map((doc) => (
+                <div className="employee-doc-row" key={doc.name}>
+                  <div><strong>{doc.name}</strong></div>
+                  <span>{doc.submittedAt !== "-" ? doc.submittedAt.slice(0, 10) : "—"}</span>
+                  <span className={`doc-validation ${doc.status.toLowerCase().replace(/\s+/g, "-")}`}>{doc.status}</span>
+                  <span style={{ fontSize: 11, color: doc.rejectionReason || doc.correctionInstructions ? "var(--error)" : "var(--n5)" }}>
+                    {doc.rejectionReason || doc.correctionInstructions || "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="employee-status-list" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-          <InfoPill label="Case status" value={statusLabels[item.st] || formatStatusLabel(item.st)} />
-          <InfoPill label="Document status" value={item.docs || "Pending"} />
-          <InfoPill label="Onboarding progress" value={`${item.prog || 0}%`} />
-          <InfoPill label="Assigned HR" value={item.owner || "HR Coordinator"} />
+        <div className="card ep-req-card">
+          <div className="card-head"><div><div className="card-title">Document Checklist</div><div className="card-sub">Required documents for onboarding</div></div></div>
+          <div className="ep-req-list">
+            {REQUIRED_DOCS.map((req) => {
+              const isSubmitted = [...submittedTypes].some((t) => t.includes(req.id) || req.id.includes(t.split("_")[0]));
+              return (
+                <div className={`ep-req-row ${isSubmitted ? "submitted" : ""}`} key={req.id}>
+                  <div className={`ep-req-dot ${isSubmitted ? "done" : ""}`} />
+                  <div className="ep-req-body">
+                    <strong>{req.label}</strong>
+                    <span>{req.desc}</span>
+                  </div>
+                  <span className={`ep-req-status ${isSubmitted ? "done" : ""}`}>{isSubmitted ? "Submitted" : "Required"}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="ep-req-footer">
+            <div className="card-sub">Questions? Reach out to <strong>{item?.owner || "your HR Coordinator"}</strong></div>
+          </div>
         </div>
       </div>
-      <EmployeeHero item={item} />
-      <div className="employee-grid">
-        <EmployeeJourney item={item} />
-        <EmployeeStatusPanel item={item} />
-      </div>
-      <EmployeeReadOnlyCards item={item} focus="docs" />
     </div>
   );
 }
@@ -1314,7 +1361,7 @@ function EmployeeJourney({ item }) {
   const { steps } = getEmployeePipeline(item);
   return (
     <div className="card employee-card">
-      <div className="card-head"><div><div className="card-title">Onboarding Journey</div><div className="card-sub">Read-only status synced from backend</div></div></div>
+      <div className="card-head"><div><div className="card-title">Onboarding Journey</div><div className="card-sub">Your step-by-step onboarding checklist</div></div></div>
       <div className="employee-timeline">
         {steps.map((step, index) => (
           <div className={`employee-step ${step.done ? "done" : step.active ? "active" : "wait"}`} key={step.label}>
@@ -1346,14 +1393,14 @@ function getEmployeePipeline(item = {}) {
   const hrApproved = item.st === "completed" || isCompleteStatus(approvalStatus) || normal(approvalStatus).includes("approved");
 
   const rawSteps = [
-    { label: "Document Submission", done: docsSubmitted, meta: docsSubmitted ? "Pre-onboarding documents submitted" : "No submitted document status from backend yet" },
-    { label: "Document Validation", done: docsValidated, meta: docsValidated ? "Pre-onboarding documents HR verified" : docsSubmitted ? "Awaiting HR verification" : "Waiting for submitted documents" },
-    { label: "IT and HRMS Ticket Creation", done: hrmsTicket, meta: hrmsTicket ? itStatus || "Ticket status received from backend" : "No IT/HRMS ticket status from backend yet" },
-    { label: "Tax and PF Configuration", done: taxPfConfig, meta: taxPfConfig ? "Tax/PF configuration completed in backend" : "No tax/PF configuration status from backend yet" },
-    { label: "Bank Details Collection", done: bankCollected, meta: bankCollected ? "Bank details collected" : "No bank details collection status from backend yet" },
-    { label: "Onboarding Mail", done: onboardingMail, meta: onboardingMail ? "Onboarding mail sent" : "No onboarding mail status from backend yet" },
-    { label: "PF Form Filling", done: pfForm, meta: pfForm ? "PF form submitted" : "No PF form submission status from backend yet" },
-    { label: "HR Approval", done: hrApproved, meta: hrApproved ? "HR approval closes onboarding loop" : "No HR approval status from backend yet" }
+    { label: "Document Submission", done: docsSubmitted, meta: docsSubmitted ? "Pre-onboarding documents submitted" : "Please submit your required documents" },
+    { label: "Document Validation", done: docsValidated, meta: docsValidated ? "HR has verified your documents" : docsSubmitted ? "Your documents are being reviewed by HR" : "Waiting for documents to be submitted first" },
+    { label: "IT and HRMS Ticket Creation", done: hrmsTicket, meta: hrmsTicket ? "IT setup is in progress" : "IT provisioning will begin after document validation" },
+    { label: "Tax and PF Configuration", done: taxPfConfig, meta: taxPfConfig ? "Tax and PF configuration complete" : "Tax and PF setup pending" },
+    { label: "Bank Details Collection", done: bankCollected, meta: bankCollected ? "Bank details have been collected" : "Bank details collection pending" },
+    { label: "Onboarding Mail", done: onboardingMail, meta: onboardingMail ? "Welcome email has been sent" : "Welcome email will be sent on your joining date" },
+    { label: "PF Form Filling", done: pfForm, meta: pfForm ? "PF form submitted successfully" : "PF form submission pending" },
+    { label: "HR Approval", done: hrApproved, meta: hrApproved ? "Onboarding complete — welcome aboard!" : "Final HR approval pending" }
   ];
   const firstPending = rawSteps.findIndex((step) => !step.done);
   const steps = rawSteps.map((step, index) => ({ ...step, active: index === firstPending }));
@@ -1390,19 +1437,127 @@ function isCompleteStatus(value) {
   return ["complete", "completed", "done", "verified", "validated", "approved", "configured", "submitted", "sent", "collected", "captured", "created"].some((token) => text.includes(token));
 }
 
-function EmployeeStatusPanel({ item }) {
+function EmployeeActionPanel({ item }) {
   const { steps } = getEmployeePipeline(item);
-  const docSubmission = steps.find((step) => step.label === "Document Submission");
-  const docValidation = steps.find((step) => step.label === "Document Validation");
+  const nextStep = steps.find((step) => !step.done);
+  const doneCount = steps.filter((step) => step.done).length;
+  const joiningDate = item?.join ? String(item.join).slice(0, 10) : null;
+  const createdDate = item?.created_at ? String(item.created_at).slice(0, 10) : null;
   return (
-    <div className="card employee-card">
-      <div className="card-head"><div className="card-title">Current Status</div><span className={`tag ${phaseTagClass(item?.phase)}`}>{item?.phase || "Onboarding"}</span></div>
-      <div className="employee-status-list">
-        <InfoPill label="Case status" value={employeeStatusLabel(item?.st)} />
-        <InfoPill label="Scenario" value={item?.scenario || "Normal onboarding"} />
-        <InfoPill label="Document submission" value={docSubmission?.done ? "Pre-onboarding docs submitted" : "Pending"} />
-        <InfoPill label="HR verification" value={docValidation?.done ? "Completed" : "Pending"} />
-        <InfoPill label="IT setup" value={item?.it || "Not started"} />
+    <div className="card employee-card ep-action-card">
+      <div className="card-head">
+        <div><div className="card-title">What's Next</div><div className="card-sub">{doneCount} of {steps.length} steps complete</div></div>
+        <span className={`tag ${phaseTagClass(item?.phase)}`}>{item?.phase || "Onboarding"}</span>
+      </div>
+      <div className="ep-action-body">
+        <div className={`ep-next-action ${!nextStep ? "ep-next-complete" : ""}`}>
+          <div className="ep-next-eyebrow">{nextStep ? "Action Required" : "All Done"}</div>
+          <div className="ep-next-title">{nextStep ? nextStep.label : "Onboarding Complete"}</div>
+          <div className="ep-next-meta">{nextStep ? nextStep.meta : "Your onboarding journey is complete — welcome aboard!"}</div>
+        </div>
+        <div className="ep-section-divider">Key Dates</div>
+        <div className="ep-pill-list">
+          <InfoPill label="Joining date" value={joiningDate || "Not set"} />
+          {createdDate && <InfoPill label="Case opened" value={createdDate} />}
+        </div>
+        <div className="ep-section-divider">Your HR Point of Contact</div>
+        <div className="ep-pill-list">
+          <InfoPill label="HR Coordinator" value={item?.owner || "HR Team"} />
+          <InfoPill label="Case reference" value={item?.caseId || "—"} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmployeeDocsSummaryCard({ item }) {
+  const docs = getDocumentSubmissions(item);
+  const validated = docs.filter((d) => ["Validated", "Approved", "Verified"].includes(d.status)).length;
+  const rejected = docs.filter((d) => d.status === "Rejected").length;
+  const pending = docs.length - validated - rejected;
+  const allDone = docs.length > 0 && validated === docs.length;
+  return (
+    <div className={`ep-bottom-card ${allDone ? "ep-tone-good" : rejected > 0 ? "ep-tone-bad" : "ep-tone-wait"}`}>
+      <div className="ep-bottom-head">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M6 3.5h5l3 3v10H6v-13ZM11 3.5v3h3M8 10h4M8 13h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <span>My Documents</span>
+      </div>
+      <div className="ep-stat-list">
+        <div className="ep-stat-row"><span>Submitted</span><strong>{docs.length || "—"}</strong></div>
+        <div className="ep-stat-row ep-stat-good"><span>Validated</span><strong>{validated}</strong></div>
+        {rejected > 0 && <div className="ep-stat-row ep-stat-bad"><span>Rejected</span><strong>{rejected}</strong></div>}
+        <div className="ep-stat-row ep-stat-wait"><span>Pending review</span><strong>{pending}</strong></div>
+      </div>
+      {rejected > 0 && <div className="ep-alert-strip ep-alert-bad">Action needed: {rejected} document{rejected > 1 ? "s" : ""} rejected — check My Documents</div>}
+      {!docs.length && <div className="ep-alert-strip ep-alert-wait">No documents submitted yet</div>}
+    </div>
+  );
+}
+
+const IT_ITEM_CONFIG = [
+  { type: "laptop", label: "Laptop Setup" },
+  { type: "email", label: "Email Account" },
+  { type: "vpn", label: "VPN Access" },
+  { type: "slack", label: "Slack" },
+  { type: "github", label: "GitHub" },
+  { type: "hrms", label: "HRMS Portal" },
+];
+
+function EmployeeITSetupCard({ provisioningItems = [], itStatus }) {
+  const byType = Object.fromEntries(provisioningItems.map((pi) => [pi.item_type, pi]));
+  const overallDone = itStatus === "Completed";
+  const hasItems = provisioningItems.length > 0;
+  const displayItems = hasItems ? provisioningItems.map((pi) => ({ type: pi.item_type, label: pi.system_name || pi.item_type?.replace(/_/g, " "), status: pi.status })) : IT_ITEM_CONFIG.map(({ type, label }) => ({ type, label, status: overallDone ? "completed" : byType[type]?.status || "pending" }));
+  const doneCount = displayItems.filter((x) => x.status === "completed" || x.status === "provisioned").length;
+  const tone = doneCount === displayItems.length ? "ep-tone-good" : doneCount > 0 ? "ep-tone-wait" : "ep-tone-wait";
+  return (
+    <div className={`ep-bottom-card ${tone}`}>
+      <div className="ep-bottom-head">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 5h12v7H4V5ZM7 15h6M10 12v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <span>IT Setup</span>
+        <span className="ep-bottom-sub">{doneCount}/{displayItems.length} done</span>
+      </div>
+      <div className="ep-it-list">
+        {displayItems.slice(0, 6).map(({ type, label, status }) => {
+          const isDone = status === "completed" || status === "provisioned";
+          const isFailed = status === "failed";
+          return (
+            <div className="ep-it-row" key={type}>
+              <div className={`ep-it-dot ${isDone ? "done" : isFailed ? "bad" : ""}`} />
+              <span className="ep-it-label">{label?.replace(/_/g, " ") || type}</span>
+              <span className={`ep-it-status ${isDone ? "done" : isFailed ? "bad" : ""}`}>{isDone ? "Ready" : isFailed ? "Failed" : "Pending"}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function EmployeeKeyContactsCard({ item }) {
+  const buddyAssigned = item?.buddyAssigned;
+  const managerName = item?.managerName || item?.manager_name;
+  const contacts = [
+    { av: (item?.owner || "HR").slice(0, 2).toUpperCase(), name: item?.owner || "HR Coordinator", role: "HR Coordinator", color: "var(--primary)" },
+    { av: managerName ? managerName.slice(0, 2).toUpperCase() : "M", name: managerName || "Manager", role: "Reporting Manager", color: "#0E766E" },
+    { av: buddyAssigned ? "B" : "?", name: buddyAssigned ? "Buddy Assigned" : "Not yet assigned", role: "Onboarding Buddy", color: buddyAssigned ? "#E4902E" : "var(--n6)" },
+  ];
+  return (
+    <div className="ep-bottom-card ep-tone-neutral">
+      <div className="ep-bottom-head">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM4.5 16c.8-2.4 2.7-3.8 5.5-3.8s4.7 1.4 5.5 3.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <span>Key Contacts</span>
+      </div>
+      <div className="ep-contact-list">
+        {contacts.map(({ av, name, role, color }) => (
+          <div className="ep-contact-row" key={role}>
+            <div className="ep-contact-av" style={{ background: color }}>{av}</div>
+            <div className="ep-contact-info">
+              <strong>{name}</strong>
+              <span>{role}</span>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1422,53 +1577,15 @@ function employeeStatusTone(status) {
   return status || "in-progress";
 }
 
-function EmployeeReadOnlyCards({ item, focus }) {
-  const { steps } = getEmployeePipeline(item);
-  const preDocsSubmitted = steps.find((step) => step.label === "Document Submission")?.done;
-  const pfSubmitted = steps.find((step) => step.label === "PF Form Filling")?.done;
-  const hrVerified = steps.find((step) => step.label === "Document Validation")?.done;
-  const hrApproved = steps.find((step) => step.label === "HR Approval")?.done;
-  const cards = [
-    ["Document Submission", preDocsSubmitted ? `Pre-onboarding docs submitted - PF form ${pfSubmitted ? "submitted" : "pending"}` : "Pre-onboarding docs pending", preDocsSubmitted && pfSubmitted ? "good" : "wait"],
-    ["Document Validation", hrVerified ? "HR verification completed" : "HR verification pending", hrVerified ? "good" : "wait"],
-    ["IT Provisioning", item?.it || "Not started", item?.it === "Completed" ? "good" : item?.it?.includes("Failed") ? "bad" : "wait"],
-    ["HR Review", hrApproved ? "Approved" : item?.st === "hil" ? "Pending HIL" : "In progress", hrApproved ? "good" : "wait"]
-  ];
-  return (
-    <>
-      <div className="employee-readonly-grid">
-        {cards.map(([title, value, tone]) => (
-          <div className={`employee-mini-card ${tone} ${focus && title.toLowerCase().includes(focus) ? "focus" : ""}`} key={title}>
-            <span>{title}</span>
-            <strong>{value}</strong>
-          </div>
-        ))}
-      </div>
-      <DocumentSubmissionDetails item={item} />
-    </>
-  );
-}
 
 function DocumentSubmissionDetails({ item }) {
   const docs = getDocumentSubmissions(item);
-  const docRejections = docs.filter((doc) => doc.status === "Rejected" || doc.rejectionReason || doc.correctionInstructions);
   return (
     <div className="card employee-doc-card">
       <div className="card-head">
         <div><div className="card-title">Submitted Documents</div><div className="card-sub">Read-only validation trail from onboarding records</div></div>
         <span className="tag purple">{docs.filter((doc) => doc.status === "Validated").length}/{docs.length} Validated</span>
       </div>
-      {!!docRejections.length && (
-        <div className="doc-remediation">
-          <strong>Rejected documents need correction</strong>
-          {docRejections.map((doc) => (
-            <div className="doc-remediation-row" key={`${doc.name}-remediation`}>
-              <span>{doc.name}</span>
-              <small>{[doc.rejectionReason, doc.correctionInstructions].filter(Boolean).join(" · ")}</small>
-            </div>
-          ))}
-        </div>
-      )}
       <div className="employee-doc-table">
         <div className="employee-doc-head"><span>Document</span><span>Submitted</span><span>Timing</span><span>Validation</span></div>
         {!docs.length && (
@@ -1481,7 +1598,7 @@ function DocumentSubmissionDetails({ item }) {
         )}
         {docs.map((doc) => (
           <div className="employee-doc-row" key={doc.name}>
-            <div><strong>{doc.name}</strong><small>{doc.status === "Rejected" ? [doc.rejectionReason, doc.correctionInstructions].filter(Boolean).join(" · ") : doc.rejectionReason || doc.correctionInstructions || doc.owner}</small></div>
+            <div><strong>{doc.name}</strong><small>{doc.rejectionReason || doc.correctionInstructions || doc.owner}</small></div>
             <span>{doc.submittedAt}</span>
             <span className={`doc-timing ${doc.timing === "Late" ? "late" : doc.timing === "Pending" ? "pending" : "ontime"}`}>{doc.timing}</span>
             <span className={`doc-validation ${doc.status.toLowerCase().replace(/\s+/g, "-")}`}>{doc.status}</span>
@@ -1499,27 +1616,10 @@ function getDocumentSubmissions(item = {}) {
     owner: doc.owner || doc.source || doc.uploaded_by || "-",
     submittedAt: doc.submitted_at || doc.created_at || "-",
     timing: doc.timing || doc.sla_status || "-",
-    status: formatStatusLabel(doc.status || "Pending"),
-    rejectionReason: doc.rejection_reason || item.rejectionReason,
-    correctionInstructions: doc.correction_instructions || item.correctionInstructions
+    status: doc.status || "Pending",
+    rejectionReason: doc.rejection_reason,
+    correctionInstructions: doc.correction_instructions
   }));
-}
-
-function LoadingShell({ title = "Loading dashboard", subtitle = "Fetching live data from the backend" }) {
-  return (
-    <div className="loading-shell">
-      <div className="card" style={{ padding: 20 }}>
-        <div className="card-title">{title}</div>
-        <div className="card-sub">{subtitle}</div>
-        <div className="loading-grid">
-          <div className="loading-card" />
-          <div className="loading-card" />
-          <div className="loading-card" />
-          <div className="loading-card loading-wide" />
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function ItQueue({ cases }) {
@@ -1643,7 +1743,7 @@ function RiskTimeline({ risks }) {
         {risks.map((item, index) => (
           <div className="risk-step" key={item.caseId}>
             <div className="risk-node">{index + 1}</div>
-            <div><div className="emp-name">{item.name}</div><div className="emp-role">{item.caseId} · {item.scenario}</div></div>
+            <div style={{ minWidth: 0, overflow: "hidden", flex: 1 }}><div className="emp-name">{item.name}</div><div className="emp-role">{item.caseId} · {item.scenario}</div></div>
             {badge(item.st)}
           </div>
         ))}
@@ -1665,7 +1765,7 @@ function AuditRow({ item }) {
 }
 
 function WorkflowCard({ title, items }) {
-  return <div className="card"><div className="card-head"><div className="card-title">{title}</div></div><div className="workflow-list">{items.map((item, index) => <div className="workflow-step" key={item}><div className="workflow-step-num">{index + 1}</div><div><div className="emp-name">{item}</div><div className="emp-role">Fetched as read-only workflow metadata</div></div></div>)}</div></div>;
+  return <div className="card"><div className="card-head"><div className="card-title">{title}</div></div><div className="workflow-list">{items.map((item, index) => <div className="workflow-step" key={item}><div className="workflow-step-num">{index + 1}</div><div style={{ minWidth: 0, overflow: "hidden", flex: 1 }}><div className="emp-name">{item}</div><div className="emp-role">Fetched as read-only workflow metadata</div></div></div>)}</div></div>;
 }
 
 function Reports({ analytics }) {
